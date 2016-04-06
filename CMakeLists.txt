@@ -1,0 +1,41 @@
+cmake_minimum_required(VERSION 2.8)
+project(DataBase)
+#SET (CMAKE_VERBOSE_MAKEFILE 1)
+find_package(PkgConfig REQUIRED)
+
+pkg_search_module(GLFW REQUIRED glfw3)
+include_directories(${GLFW_INCLUDE_DIRS})
+link_libraries(${GLFW_LIBRARIES})
+find_package(GLEW REQUIRED)
+find_package(CUDA QUIET REQUIRED)
+include_directories(kernels utility)
+
+if (GLEW_FOUND)
+    include_directories(${GLEW_INCLUDE_DIRS})
+    link_libraries(${GLEW_LIBRARIES})
+else ()
+message(FATAL_ERROR "GLEW NOT FOUND")
+endif()
+
+set (ARGS_USER_SYSTEM "")
+macro(CUDA_INCLUDE_DIRECTORIES_SYSTEM)
+    foreach(dir ${ARGN})
+        set(ARGS_USER_SYSTEM "${ARGS_USER_SYSTEM} -isystem '${CMAKE_CURRENT_SOURCE_DIR}/${dir}'")
+    endforeach()
+endmacro()
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
+include_directories(SYSTEM "externlibs")
+CUDA_INCLUDE_DIRECTORIES_SYSTEM("externlibs/")
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
+
+set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra")
+set(CUDA_NVCC_FLAGS "-O3 -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_35,code=sm_35 -Xcompiler \"${ARGS_USER_SYSTEM}\"")
+
+file(GLOB_RECURSE SRC_CUDA "spatialdatabase/*.cu" "spatialdatabase/*.cuh")
+file(GLOB_RECURSE UTIL_SOURCES "spatialdatabase/*.cpp")
+file(GLOB_RECURSE UTIL_HEADERS "spatialdatabase/*.h")
+CUDA_ADD_EXECUTABLE(${PROJECT_NAME} ${UTIL_SOURCES} ${UTIL_HEADERS} ${SRC_CUDA})
+target_link_libraries(${PROJECT_NAME} GL GLU GLEW glfw ${CUDA_LIBRARIES} Threads::Threads ${CMAKE_DL_LIBS} rt)
