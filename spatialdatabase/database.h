@@ -1,6 +1,7 @@
 #pragma once
 #include "gpudb.h"
 #include "types.h"
+#include "tabledescription.h"
 
 class Attribute {
 public:
@@ -26,7 +27,7 @@ private:
     template<typename T>
     bool setValueImp(T val) {
         if (value) {
-            delete [] value;
+            delete [] (char*)(value);
         }
 
         T* value_ptr = new T;
@@ -49,63 +50,12 @@ class Row {
     std::set<Attribute> values;
 };
 
-class AttributeDescription {
-public:
-    std::string name;
-    Type type;
-
-    bool operator<(AttributeDescription const &b) const {
-        return name < b.name;
-    }
-};
-
-class DataBase;
-
-class TableDescription {
-    friend class DataBase;
-    std::string name;
-    SpatialType spatialKey;
-    TemporalType temporalKey;
-    std::set<AttributeDescription> columnDescription;
-
-public:
-    bool setName(std::string newName) {
-        name = newName;
-        return true;
-    }
-
-    bool setSpatialKey(SpatialType key) {
-        spatialKey = key;
-        return true;
-    }
-
-    bool setTemporalKey(TemporalType key) {
-        temporalKey = key;
-        return true;
-    }
-
-    bool addColumn(AttributeDescription col) {
-        auto res = columnDescription.insert(col);
-        return res.second;
-    }
-
-    bool delColumn(AttributeDescription col) {
-        return columnDescription.erase(col);
-    }
-
-    bool operator<(TableDescription const &b) const {
-        return name < b.name;
-    }
-};
 
 class DataBase {
     typedef std::pair<std::string, TableDescription> tablesTypePair;
     typedef std::pair<std::string, gpudb::GpuTable> tablesPair;
 public:
-    void insertRow(std::string tableName, Row row) {
-
-    }
-
+    bool insertRow(std::string tableName, Row row);
     bool createTable(TableDescription table);
 
 private:

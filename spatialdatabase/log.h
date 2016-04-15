@@ -3,7 +3,7 @@
 #include "deque"
 #include "string"
 #include "list"
-
+#include "singletonmanager.h"
 #define SourcePos() (char const*)(SourcePosition(__FILE__, __LINE__))
 
 class SourcePosition {
@@ -42,7 +42,7 @@ public:
     virtual void notify(Message const& msg) = 0;
 };
 
-class Log {
+class Log : public Singleton {
 public:
     void write(LOG_MESSAGE_TYPE type, const std::string &className, const std::string &functionName, const char *format, ...);
     void subscribe(ILogSubscriber *subscriber);
@@ -52,6 +52,7 @@ private:
     void push(Message& msg);
     std::list<ILogSubscriber*> m_subscribers;
     std::deque<Message> m_queue;
+    virtual ~Log(){printf("delete Log();\n");}
 };
 
 extern Log gLog;

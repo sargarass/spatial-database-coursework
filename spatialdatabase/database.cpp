@@ -22,25 +22,35 @@ bool Attribute::setValue(bool isNull, double val) {
 }
 
 bool DataBase::createTable(TableDescription table) {
-    if (tablesType.find(table.name) != tablesType.end()
-        || (table.name.length() > NAME_MAX_LEN)
-        || (table.columnDescription.size() == 0)) {
+    if (table.name.length() > NAME_MAX_LEN) {
+        Log::getInstance().write(LOG_MESSAGE_TYPE::ERROR, "DataBase", "createTable",
+                                 "Cannot create table with name = \"%s\" length %d: max %d length",
+                                 table.name.c_str(),
+                                 table.name.length(),
+                                 NAME_MAX_LEN);
+        return false;
+    }
+
+    if (table.columnDescription.size() == 0) {
+        Log::getInstance().write(LOG_MESSAGE_TYPE::ERROR, "DataBase", "createTable",
+                                 "Cannot create table with zero columns");
+        return false;
+    }
+
+    if (tablesType.find(table.name) != tablesType.end()) {
+        Log::getInstance().write(LOG_MESSAGE_TYPE::ERROR, "DataBase", "createTable",
+                                 "Cannot create table: table with this name is exist");
         return false;
     }
 
     tablesType.insert(tablesTypePair(table.name, table));
     gpudb::GpuTable gputable;
-/// тут мы копируем заголовок таблицы
-    /*thrust::host_vector<gpudb::GpuColumnAttribute> toGPU;
-    for (auto &elem : table.columnDescription) {
-        gpudb::GpuColumnAttribute col;
-        memcpy(col.name, elem.name.c_str(), NAME_MAX_LEN);
-        col.type = elem.type;
-        toGPU.push_back(col);
-    }
-    gputable.columns = toGPU;*/
-
-    std::memcpy(gputable.name, table.name.c_str(), table.name.length());
+    gputable.set(table);
     tables.insert(tablesPair(table.name, gputable));
     return true;
+}
+
+
+bool DataBase::insertRow(std::string tableName, Row row) {
+    return false;
 }

@@ -2,13 +2,28 @@
 #include "types.h"
 #include "aabb.h"
 #include "log.h"
+#include "tabledescription.h"
+#include "gpuallocator.h"
 //Miller cylindrical projection
 
 namespace gpudb {
+    struct GpuColumnSpatialKey {
+        char name[NAME_MAX_LEN];
+        SpatialType type;
+    };
+
+    struct GpuColumnTemoralKey {
+        char name[NAME_MAX_LEN];
+        TemporalType type;
+    };
+
+    struct GpuColumnAttribute {
+        char name[NAME_MAX_LEN];
+        Type type;
+    };
 
     struct SpatialKey {
         SpatialType spatialType;
-
         AABB boundingBox();
     };
 
@@ -23,19 +38,6 @@ namespace gpudb {
         uint2 centroid();
     };
 
-    struct GpuColumnSpatialKey {
-        SpatialType temporalType;
-    };
-
-    struct GpuColumnTemoralKey {
-        TemporalType temporalType;
-    };
-
-    struct GpuColumnAttribute {
-        Type type;
-        char name[NAME_MAX_LEN];
-    };
-
     struct Value {
         bool isNull;
         void *value;
@@ -44,18 +46,20 @@ namespace gpudb {
     struct GpuRow {
         SpatialKey spatialPart;
         TemporalKey temporalPart;
-
         Value *value;
     };
 
     struct GpuTable {
+        GpuTable();
         char name[NAME_MAX_LEN];
         GpuColumnSpatialKey spatialKey;
         GpuColumnTemoralKey temporalKey;
         GpuColumnAttribute *columns;
         uint64_t columnsSize;
-
         GpuRow *rows;
         uint64_t rowsSize;
+
+        bool set(TableDescription table);
+        bool setName(std::string const &string);
     };
 }

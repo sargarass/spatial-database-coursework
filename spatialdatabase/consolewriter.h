@@ -38,9 +38,9 @@
 #define BOLDWHITE   ""
 #endif
 
-class ConsoleWriter : public ILogSubscriber {
+class ConsoleWriter : public ILogSubscriber, public Singleton {
 public:
-    virtual ~ConsoleWriter(){}
+    virtual ~ConsoleWriter(){ printf("delete ConsoleWriter();\n"); }
     ConsoleWriter() {
         m_showDebug = true;
     }
@@ -48,7 +48,7 @@ public:
     virtual void notify(Message const &msg) final;
     void showDebug(bool b);
     static ConsoleWriter &getInstance() {
-        static ConsoleWriter writer;
+        static ConsoleWriter &writer = SingletonFactory::getInstance().create<ConsoleWriter>();
         return writer;
     }
 private:

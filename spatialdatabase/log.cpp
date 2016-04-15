@@ -22,7 +22,7 @@ void Log::write(LOG_MESSAGE_TYPE type, std::string const &className, std::string
     if (functionName != "") {
         msg.text += functionName + "(): ";
     }
-    msg.text  += tmp;
+    msg.text += tmp;
     push(msg);
 }
 
@@ -43,10 +43,11 @@ void Log::subscribe(ILogSubscriber *subscriber) {
 }
 
 Log &Log::getInstance()  {
-    static Log gLog;
+    static Log &gLog = SingletonFactory::getInstance().create<Log>();
     static bool init = false;
     if (init == false) {
         gLog.subscribe(&ConsoleWriter::getInstance());
+        dynamic_cast<Singleton*>(&gLog)->dependOn(ConsoleWriter::getInstance());
         init = true;
     }
     return gLog;
