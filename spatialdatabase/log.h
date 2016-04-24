@@ -42,17 +42,21 @@ public:
     virtual void notify(Message const& msg) = 0;
 };
 
+#define gLogWrite(type, format, ...) Log::getInstance().write(type, __FILE__, __PRETTY_FUNCTION__, __LINE__, format, ##__VA_ARGS__)
+
 class Log : public Singleton {
 public:
-    void write(LOG_MESSAGE_TYPE type, const std::string &className, const std::string &functionName, const char *format, ...);
+    void write(LOG_MESSAGE_TYPE type, std::string const &fileName, std::string const &functionName, int64_t const line, const char *format, ...);
     void subscribe(ILogSubscriber *subscriber);
     static Log &getInstance();
-
+    void showFilePathLevel(int lvl);
 private:
+    int m_fileLVL;
+    Log();
     void push(Message& msg);
     std::list<ILogSubscriber*> m_subscribers;
     std::deque<Message> m_queue;
-    virtual ~Log(){printf("delete Log();\n");}
+    virtual ~Log();
 };
 
 extern Log gLog;

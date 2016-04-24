@@ -18,7 +18,7 @@ namespace gpudb {
         bool free(void *ptr);
         void freeAll();
     protected:
-        virtual ~gpuAllocator(){ printf("delete gpuAllocator();\n"); freeAll(); }
+        virtual ~gpuAllocator(){ gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "delete gpuAllocator"); freeAll(); }
         std::set<uintptr_t> memoryPtrs;
     };
 }

@@ -1,19 +1,23 @@
 #include "gpuallocator.h"
 
 gpudb::gpuAllocator &gpudb::gpuAllocator::getInstance() {
-    static gpuAllocator &allocator = SingletonFactory::getInstance().create<gpuAllocator>();
+    static gpuAllocator *allocator = new gpuAllocator();
     static bool init = false;
     if (!init) {
-        dynamic_cast<Singleton*>(&allocator)->dependOn(Log::getInstance());
         init = true;
+        SingletonFactory::getInstance().registration<gpuAllocator>(allocator);
+        dynamic_cast<Singleton*>(allocator)->dependOn(Log::getInstance());
     }
-    return allocator;
+    return *allocator;
 }
 
 bool gpudb::gpuAllocator::free(void *ptr) {
+    if (ptr == nullptr) {
+        return false;
+    }
+
     if (!memoryPtrs.erase(reinterpret_cast<uintptr_t>(ptr))) {
-        Log::getInstance().write(LOG_MESSAGE_TYPE::ERROR, "gpuAllocator", "free",
-                                 "memory was not alloced");
+        gLogWrite(LOG_MESSAGE_TYPE::WARNING, "memory was not alloced");
         return false;
     }
     cudaFree(ptr);
@@ -21,8 +25,7 @@ bool gpudb::gpuAllocator::free(void *ptr) {
 }
 
 void gpudb::gpuAllocator::freeAll() {
-    Log::getInstance().write(LOG_MESSAGE_TYPE::INFO, "gpuAllocator", "freeAll",
-                             "freeing all memory");
+    gLogWrite(LOG_MESSAGE_TYPE::INFO, "freeing all memory");
     for (auto& ptr : memoryPtrs) {
         cudaFree((void*)ptr);
     }

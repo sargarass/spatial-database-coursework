@@ -5,6 +5,7 @@ namespace gpudb {
 }
 
 class AttributeDescription {
+    friend class gpudb::GpuTable;
 public:
     std::string name;
     Type type;
@@ -25,6 +26,7 @@ class TableDescription {
     TemporalType temporalKeyType;
     std::string temporalKeyName;
     std::set<AttributeDescription> columnDescription;
+    uint64_t getRowMemoryValuesSize();
 
 public:
     bool setName(std::string newName);

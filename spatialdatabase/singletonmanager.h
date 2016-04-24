@@ -14,8 +14,8 @@ public:
 
     bool dependOn(Singleton &s);
 protected:
+    Singleton() {id = 0xFFFFFFFFFFFULL;}
     bool checkOnCicle(Singleton *link);
-    Singleton() {}
     virtual ~Singleton(){}
     std::list<Singleton *> linkFrom;
     std::list<Singleton *> linkTo;
@@ -23,7 +23,7 @@ protected:
     uint64_t id;
 };
 
-class SingletonFactory : public Singleton {
+class SingletonFactory {
 public:
     static SingletonFactory &getInstance() {
         static SingletonFactory s;
@@ -31,16 +31,18 @@ public:
     }
 
     template<typename T>
-    T& create() {
-        T* singleton = new T();
-        Singleton* singleton_ptr = dynamic_cast<Singleton*>(singleton);
+    bool registration(T *singleton) {
+        Singleton *singleton_ptr = dynamic_cast<Singleton*>(singleton);
+        if (singleton_ptr == nullptr) {
+            return false;
+        }
         singleton_ptr->id = singletonGraph.size();
-        singletonGraph.push_back(dynamic_cast<Singleton*>(singleton_ptr));
-        return *singleton;
+        singletonGraph.push_back(singleton_ptr);
+        return true;
     }
 
     virtual ~SingletonFactory();
 private:
-    void bfsDeleteFromBottomToTop(std::vector<bool> &used, Singleton *link);
+    void bfsDelete(std::vector<bool> &used, Singleton *link);
     std::vector<Singleton *> singletonGraph;
 };

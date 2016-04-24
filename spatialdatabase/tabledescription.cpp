@@ -41,3 +41,21 @@ bool TableDescription::delColumn(AttributeDescription col) {
 bool TableDescription::operator<(TableDescription const &b) const {
     return name < b.name;
 }
+
+uint64_t TableDescription::getRowMemoryValuesSize() {
+    uint64_t res = 0;
+    for (auto& v : this->columnDescription) {
+        switch (v.type) {
+            case STRING:
+                res += 255;
+                break;
+            case REAL:
+            case INT:
+                res += 8;
+                break;
+            default:
+                break;
+        }
+    }
+    return res;
+}

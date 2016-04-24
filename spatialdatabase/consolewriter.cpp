@@ -24,6 +24,9 @@ void ConsoleWriter::notify(Message const &msg) {
             break;
     }
     fwrite( tmp.c_str(), tmp.size() + 1, 1, stdout);
+    if (msg.type == LOG_MESSAGE_TYPE::DEBUG) {
+        fflush(stdout);
+    }
 }
 
 void ConsoleWriter::showDebug(bool b) {

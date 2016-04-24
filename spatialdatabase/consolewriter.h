@@ -37,7 +37,7 @@
 #define BOLDCYAN    ""
 #define BOLDWHITE   ""
 #endif
-
+#include "gpudb.h"
 class ConsoleWriter : public ILogSubscriber, public Singleton {
 public:
     virtual ~ConsoleWriter(){ printf("delete ConsoleWriter();\n"); }
@@ -48,8 +48,13 @@ public:
     virtual void notify(Message const &msg) final;
     void showDebug(bool b);
     static ConsoleWriter &getInstance() {
-        static ConsoleWriter &writer = SingletonFactory::getInstance().create<ConsoleWriter>();
-        return writer;
+        static ConsoleWriter *writer = new ConsoleWriter();
+        static bool init = false;
+        if (!init) {
+            init = true;
+            SingletonFactory::getInstance().registration<ConsoleWriter>(writer);
+        }
+        return *writer;
     }
 private:
     bool m_showDebug;
