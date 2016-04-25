@@ -49,6 +49,8 @@ namespace gpudb {
         float2 z; // valid time
         float2 w; // transaction time
         int numComp;
+
+        __device__ __host__
         int64_t clamp(int64_t in, int64_t min, int64_t max) {
             int64_t res = (in > max)? max : in;
             res = (res < min)? min : res;
@@ -61,12 +63,12 @@ namespace gpudb {
             MortonCode code;
             switch (numComp) {
                 case 4:
-                    centroid.w = AABBmin(w) + (AABBmax(w) - AABBmin(w)) / 2.0f;
+                    centroid.w = AABBmin(w) + 0.5 * (AABBmax(w) - AABBmin(w));
                 case 3:
-                    centroid.z = AABBmin(z) + (AABBmax(z) - AABBmin(z)) / 2.0f;
+                    centroid.z = AABBmin(z) + 0.5 * (AABBmax(z) - AABBmin(z));
                 case 2:
-                    centroid.x = AABBmin(x) + (AABBmax(x) - AABBmin(x)) / 2.0f;
-                    centroid.y = AABBmin(y) + (AABBmax(y) - AABBmin(y)) / 2.0f;
+                    centroid.x = AABBmin(x) + 0.5 * (AABBmax(x) - AABBmin(x));
+                    centroid.y = AABBmin(y) + 0.5 * (AABBmax(y) - AABBmin(y));
 
                     centroid.x -= AABBmin(global.x);
                     centroid.y -= AABBmin(global.y);
@@ -120,21 +122,6 @@ namespace gpudb {
             }
 
             return code;
-        }
-
-        __device__ __host__
-        MortonCode getMortonCode() {
-            AABB global;
-            AABBmin(global.x) = -180.0f;
-            AABBmin(global.y) = -180.0f;
-            AABBmin(global.z) = 0.0f;
-            AABBmin(global.w) = 0.0f;
-
-            AABBmax(global.x) = 180.0f;
-            AABBmax(global.y) = 180.0f;
-            AABBmax(global.z) = 1.0f;
-            AABBmax(global.w) = 1.0f;
-            return getMortonCode(global);
         }
     };
 }

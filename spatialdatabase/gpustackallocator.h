@@ -14,7 +14,7 @@ namespace gpudb {
 
         void resize(uint64_t size);
 
-        static GpuStackAllocator& getInstance() {
+        inline static GpuStackAllocator& getInstance() {
             static GpuStackAllocator *gGpuStackAllocator = new GpuStackAllocator();
             static bool init = false;
             if (init == false) {

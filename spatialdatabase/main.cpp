@@ -5,20 +5,6 @@
 #include "database.h"
 #include "hlbvh.h"
 
-float getMax(float a, float b) {
-    if (a > b) {
-        return a;
-    }
-    return b;
-}
-
-float getMin(float a, float b){
-    if (a > b) {
-        return b;
-    }
-    return a;
-}
-
 float clamp(float in, float min, float max) {
     float res = in;
     if (res > max) {
@@ -29,6 +15,10 @@ float clamp(float in, float min, float max) {
     }
     return res;
 }
+
+gpudb::AABB globalAABB;
+bool init;
+
 gpudb::AABB genAABB() {
     gpudb::AABB aabb;
     float x1 = clamp((rand() / (float)RAND_MAX) * 360.0f - 180.0f, -180.0f, 180.0f);
@@ -40,15 +30,31 @@ gpudb::AABB genAABB() {
     float w1 = clamp((rand() / (float)RAND_MAX), 0.0f, 1.0f);
     float w2 = clamp((rand() / (float)RAND_MAX), 0.0f, 1.0f);
 
-    aabb.x.x = getMin(x1, x2);
-    aabb.y.x = getMin(y1, y2);
-    aabb.z.x = getMin(z1, z2);
-    aabb.w.x = getMin(w1, w2);
+    aabb.x.x = std::min(x1, x2);
+    aabb.y.x = std::min(y1, y2);
+    aabb.z.x = std::min(z1, z2);
+    aabb.w.x = std::min(w1, w2);
 
-    aabb.x.y = getMax(x1, x2);
-    aabb.y.y = getMax(y1,  y2);
-    aabb.z.y = getMax(z1, z2);
-    aabb.w.y = getMax(w1, w2);
+    aabb.x.y = std::max(x1, x2);
+    aabb.y.y = std::max(y1, y2);
+    aabb.z.y = std::max(z1, z2);
+    aabb.w.y = std::max(w1, w2);
+
+    if (!init) {
+        init = true;
+        globalAABB = aabb;
+    }
+
+    globalAABB.x.x = std::min(globalAABB.x.x, aabb.x.x);
+    globalAABB.y.x = std::min(globalAABB.y.x, aabb.y.x);
+    globalAABB.z.x = std::min(globalAABB.z.x, aabb.z.x);
+    globalAABB.w.x = std::min(globalAABB.w.x, aabb.w.x);
+
+    globalAABB.x.y = std::max(globalAABB.x.y, aabb.x.y);
+    globalAABB.y.y = std::max(globalAABB.y.y, aabb.y.y);
+    globalAABB.z.y = std::max(globalAABB.z.y, aabb.z.y);
+    globalAABB.w.y = std::max(globalAABB.w.y, aabb.w.y);
+
     aabb.numComp = 4;
     return aabb;
 }
@@ -139,7 +145,9 @@ int main()
                cpuAAABB[i].z.x, cpuAAABB[i].z.y,
                cpuAAABB[i].w.x, cpuAAABB[i].w.y);*/
     }
-
+    printf("Global AABB {%f %f} {%f %f} {%f %f} {%f %f}\n",
+           globalAABB.x.x, globalAABB.x.y, globalAABB.y.x, globalAABB.y.y,
+           globalAABB.z.x, globalAABB.z.y, globalAABB.w.x, globalAABB.w.y);
     cudaMemcpy(aabb, cpuAAABB, sizeof(gpudb::AABB) * size, cudaMemcpyHostToDevice);
     bvh.build(aabb, size);
 
