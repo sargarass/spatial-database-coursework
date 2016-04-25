@@ -9,6 +9,7 @@ namespace gpudb {
     class HLBVH {
     public:
         bool build(AABB *aabb, uint32_t size);
+        bool search(AABB aabb);
     public:
         bool alloc(uint32_t size);
         void free();
@@ -20,6 +21,7 @@ namespace gpudb {
         float4 *aabbMin;
         float4 *aabbMax;
 
+        uint *references;
         int *parents;
         uint2 *ranges;
         int *links;

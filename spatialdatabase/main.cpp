@@ -133,23 +133,26 @@ int main()
     db.showTable("test1");
     gpudb::HLBVH bvh;
     gpudb::GpuStackAllocator::getInstance().pushPosition();
-    const int size =  250000;
+    const int size =  25000;
     gpudb::AABB *aabb = gpudb::GpuStackAllocator::getInstance().alloc<gpudb::AABB>(size);
     StackAllocator::getInstance().pushPosition();
     gpudb::AABB *cpuAAABB = StackAllocator::getInstance().alloc<gpudb::AABB>(size);
 
     for (int i = 0; i < size; i++) {
         cpuAAABB[i] = genAABB();
-        /*printf("AABB {%f, %f} {%f, %f} {%f, %f} {%f, %f} \n", cpuAAABB[i].x.x, cpuAAABB[i].x.y,
-               cpuAAABB[i].y.x, cpuAAABB[i].y.y,
-               cpuAAABB[i].z.x, cpuAAABB[i].z.y,
-               cpuAAABB[i].w.x, cpuAAABB[i].w.y);*/
     }
     printf("Global AABB {%f %f} {%f %f} {%f %f} {%f %f}\n",
            globalAABB.x.x, globalAABB.x.y, globalAABB.y.x, globalAABB.y.y,
            globalAABB.z.x, globalAABB.z.y, globalAABB.w.x, globalAABB.w.y);
     cudaMemcpy(aabb, cpuAAABB, sizeof(gpudb::AABB) * size, cudaMemcpyHostToDevice);
     bvh.build(aabb, size);
+
+    for (int i = 0; i < size; i++) {
+        if (!bvh.search(cpuAAABB[i])) {
+            printf("!!!!\n");
+        }
+    }
+
 
     StackAllocator::getInstance().popPosition();
     gpudb::GpuStackAllocator::getInstance().popPosition();
