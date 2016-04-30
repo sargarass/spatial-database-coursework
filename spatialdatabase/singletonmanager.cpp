@@ -32,7 +32,7 @@ bool Singleton::checkOnCicle(Singleton *link){
        for (auto &v : link->linkFrom) {
            auto it = used.find(v->id);
            if (v->id == root->id) {
-               printf("Circle %d -> %d", v->id, root->id);
+               printf("Circle %zu -> %zu", v->id, root->id);
                return true;
            }
 

@@ -28,17 +28,16 @@ namespace gpudb {
 
         template<typename T>
         T* alloc(uint64_t count = 1) {
-            if (count != 0) {
-                uint64_t objSize = sizeof(T) * count;
-                uint64_t offset = GpuAlignSize - 1;
-                if (m_top + offset + objSize <= m_memory + m_size) {
+            uint64_t objSize = sizeof(T) * count;
+            uint64_t offset = GpuAlignSize - 1;
+            uint64_t newtop = m_top + offset + objSize;
+            if (count != 0 && newtop <= m_memory + m_size) {
                     uintptr_t aligned = (m_top + offset) & ~(GpuAlignSize - 1); // выравняли указатель
                     m_top = m_top + offset + objSize; // сдвинули указатель на top стека
                     m_alloced.push_back(objSize + offset);
                     return reinterpret_cast<T*>(aligned);
-                }
             }
-            gLogWrite(LOG_MESSAGE_TYPE::WARNING, "nullptr was return!");
+            gLogWrite(LOG_MESSAGE_TYPE::WARNING, "nullptr was return! requested memory %zu | free %zu", offset + objSize, availableMemory());
             exit(-1);
             return nullptr;
         }

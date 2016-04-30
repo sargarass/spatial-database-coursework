@@ -1,93 +1,45 @@
 #include "hlbvh.h"
-#include "../externlibs/cub/cub/cub.cuh"
+#include "utils.h"
+#include <cub/cub/cub.cuh>
+
+const int gpudb::HLBVH::LEAF = 0xFFFFFFFF;
+
 bool gpudb::HLBVH::alloc(uint32_t size) {
-    do {
-        links = gpuAllocator::getInstance().alloc<int>( 2 * size );
-        if (links == nullptr) { break; }
-        parents = gpuAllocator::getInstance().alloc<int>( 2 * size );
-        if (parents == nullptr) { break; }
-        ranges = gpuAllocator::getInstance().alloc<uint2>( 2 * size );
-        if (ranges == nullptr) { break; }
-        aabbMin = gpuAllocator::getInstance().alloc<float4>( 2 * size );
-        if (aabbMin == nullptr) { break; }
-        aabbMax = gpuAllocator::getInstance().alloc<float4>( 2 * size );
-        if (aabbMax == nullptr) { break; }
-        references = gpuAllocator::getInstance().alloc<uint>(size);
-        if (references == nullptr) { break; }
+    memorySize = 2 * size * (2 * sizeof(int) + sizeof(uint2) + 2 * sizeof(float4)) + 1 * size * ( sizeof(uint) );
+    memory = gpuAllocator::getInstance().alloc<uint8_t>(memorySize);
+    if (memory == nullptr) {
+        memorySize = 0;
+        return false;
+    }
+    links =      reinterpret_cast<int*>    (memory);
+    parents =    reinterpret_cast<int*>    (memory + 2 * size * sizeof(int));
+    ranges =     reinterpret_cast<uint2*>  (memory + 2 * size * (2 * sizeof(int)));
+    aabbMin =    reinterpret_cast<float4*> (memory + 2 * size * (2 * sizeof(int) + sizeof(uint2)));
+    aabbMax =    reinterpret_cast<float4*> (memory + 2 * size * (2 * sizeof(int) + sizeof(uint2) + 1 * sizeof(float4)));
+    references = reinterpret_cast<uint*>   (memory + 2 * size * (2 * sizeof(int) + sizeof(uint2) + 2 * sizeof(float4)));
 
-        this->numBVHLevels = 0;
-        this->numNodes = 0;
-        this->numReferences = size;
-        return true;
-    } while(0);
-
-    free();
-    return false;
+    numBVHLevels = 0;
+    numNodes = 0;
+    numReferences = size;
+    return true;
 }
 
 void gpudb::HLBVH::free() {
-    if (links) {
-        gpuAllocator::getInstance().free(links);
+    if (memory) {
+        gpuAllocator::getInstance().free(memory);
     }
 
-    if (parents) {
-        gpuAllocator::getInstance().free(parents);
-    }
-
-    if (ranges) {
-        gpuAllocator::getInstance().free(ranges);
-    }
-
-    if (aabbMin) {
-        gpuAllocator::getInstance().free(aabbMin);
-    }
-
-    if (aabbMax) {
-        gpuAllocator::getInstance().free(aabbMax);
-    }
-
-    if (references) {
-        gpuAllocator::getInstance().free(references);
-    }
-    this->numBVHLevels = 0;
-    this->numNodes = 0;
-    this->numReferences = 0;
-}
-
-static __device__ __inline__
-uint getGlobalIdx3DZXY()
-{
-    uint blockId = blockIdx.x
-             + blockIdx.y * gridDim.x
-             + gridDim.x * gridDim.y * blockIdx.z;
-    return blockId * (blockDim.x * blockDim.y * blockDim.z)
-              + (threadIdx.z * (blockDim.x * blockDim.y))
-              + (threadIdx.y * blockDim.x)
-              + threadIdx.x;
-}
-
-static dim3 gridConfigure(uint64_t problemSize, dim3 block) {
-    /// TODO
-    /*dim3 MaxGridDim = {(uint)LibResouces::getCudaProperties(0).maxGridDimensionSize[0],
-                       (uint)LibResouces::getCudaProperties(0).maxGridDimensionSize[1],
-                       (uint)LibResouces::getCudaProperties(0).maxGridDimensionSize[2]};
-    dim3 gridDim = {1, 1, 1};
-
-    uint64_t blockSize = block.x * block.y * block.z;
-
-    if (problemSize > MaxGridDim.y * MaxGridDim.x * blockSize) {
-        gridDim.z = problemSize / MaxGridDim.x * MaxGridDim.y * blockSize;
-        problemSize = problemSize % MaxGridDim.x * MaxGridDim.y * blockSize;
-    }
-
-    if (problemSize > MaxGridDim.x * blockSize) {
-        gridDim.y = problemSize / MaxGridDim.x * blockSize;
-        problemSize = problemSize % MaxGridDim.x * blockSize;
-    }
-
-    gridDim.x = (problemSize + blockSize - 1) / blockSize;*/
-
-    return dim3((problemSize + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    memory = nullptr;
+    links = nullptr;
+    parents = nullptr;
+    ranges = nullptr;
+    aabbMin = nullptr;
+    aabbMax = nullptr;
+    references = nullptr;
+    memorySize = 0;
+    numBVHLevels = 0;
+    numNodes = 0;
+    numReferences = 0;
 }
 
 ///////////////////////////////////////
@@ -115,7 +67,7 @@ void initKeys(uint64_t *keys, uint *values, gpudb::MortonCode *codes, uint size)
     if (thread >= size) {
         return;
     }
-    keys[thread] = codes[thread].high;
+    keys[thread] = (codes[thread].high << 32ULL) | ((codes[thread].low >> 32ULL) & 0x00000000FFFFFFFFULL);
     values[thread] = thread;
 }
 
@@ -133,19 +85,13 @@ void computeDiff(uint64_t *keys, uint *array, uint size) {
     }
 }
 
-
-template<bool high> __global__
+__global__
 void writeNewKeys(uint64_t *keys, uint *values, gpudb::MortonCode *codes, uint *prefixSum, uint size) {
     uint thread = getGlobalIdx3DZXY();
     if (thread >= size) {
         return;
     }
-    keys[thread] = 0;
-    if (high) {
-        keys[thread] = ((uint64_t)prefixSum[thread]) << 32ULL | ((codes[values[thread]].low & 0xFFFFFFFF00000000ULL) >> 32ULL);
-    } else {
-        keys[thread] = ((uint64_t)prefixSum[thread]) << 32ULL | ((codes[values[thread]].low & 0x00000000FFFFFFFFULL));
-    }
+    keys[thread] = ((uint64_t)prefixSum[thread]) << 32ULL | ((codes[values[thread]].low & 0x00000000FFFFFFFFULL));
 }
 
 __global__
@@ -162,12 +108,15 @@ void copyKeys(gpudb::MortonCode *new_keys, gpudb::MortonCode *old_keys, uint *ne
 }
 
 bool sortMortonCodes(gpudb::MortonCode *keys, uint *values, uint size) {
+    // 96 bit
+    Timer t;
+    t.start();
     uint64_t *cub_keys[2];
     uint *cub_values[2];
     dim3 block = dim3(BLOCK_SIZE);
     dim3 grid = gridConfigure(size, block);
     gpudb::GpuStackAllocator::getInstance().pushPosition();
-    int switcher = 0;
+    int switcher = 1;
     for (int i = 0; i < 2; i++) {
         cub_keys[i] = gpudb::GpuStackAllocator::getInstance().alloc<uint64_t>(size);
         cub_values[i]  = gpudb::GpuStackAllocator::getInstance().alloc<uint>(size);
@@ -187,47 +136,35 @@ bool sortMortonCodes(gpudb::MortonCode *keys, uint *values, uint size) {
         return false;
     }
     // закончили с выделением памяти, фух
-
     // первая сортировка
     initKeys<<<grid, block>>>(cub_keys[switcher], cub_values[switcher], keys, size);
     cub::DeviceRadixSort::SortPairs(cub_tmp_memory, cub_tmp_memory_size,
                                     cub_keys[switcher], cub_keys[1 - switcher],
                                     cub_values[switcher], cub_values[1 - switcher], size);
     switcher = 1 - switcher;
-    // теперь нам надо ещё 2. Чтобы сохранить порядок, посчитаем префиксную сумму
+    // Чтобы сохранить порядок, посчитаем префиксную сумму
     // и в качестве ключа будем использовать
     // prefixsum << 32 | keypart
-
     // отсортированное в cub_keys/cub_values[switcher], эти два массива теперь не нужны
-
     uint *arrayPrefixSum = reinterpret_cast<uint*>(cub_keys[1 - switcher]);
     uint *array = reinterpret_cast<uint*>(cub_values[1 - switcher]);
     computeDiff<<<grid, block>>>(cub_keys[switcher], array, size);
     cub::DeviceScan::ExclusiveSum(cub_tmp_memory, cub_tmp_memory_size, array, arrayPrefixSum, size);
-    writeNewKeys<true><<<grid, block>>>(cub_keys[switcher], cub_values[switcher], keys, arrayPrefixSum, size);
+    writeNewKeys<<<grid, block>>>(cub_keys[switcher], cub_values[switcher], keys, arrayPrefixSum, size);
     cub::DeviceRadixSort::SortPairs(cub_tmp_memory, cub_tmp_memory_size,
                                     cub_keys[switcher], cub_keys[1 - switcher],
                                     cub_values[switcher], cub_values[1 - switcher], size);
-
-    switcher = 1 - switcher;
-    arrayPrefixSum = reinterpret_cast<uint*>(cub_keys[1 - switcher]);
-    array = reinterpret_cast<uint*>(cub_values[1 - switcher]);
-    computeDiff<<<grid, block>>>(cub_keys[switcher], array, size);
-    cub::DeviceScan::ExclusiveSum(cub_tmp_memory, cub_tmp_memory_size, array, arrayPrefixSum, size);
-    writeNewKeys<false><<<grid, block>>>(cub_keys[switcher], cub_values[switcher], keys, arrayPrefixSum, size);
-    cub::DeviceRadixSort::SortPairs(cub_tmp_memory, cub_tmp_memory_size,
-                                    cub_keys[switcher], cub_keys[1 - switcher],
-                                    cub_values[switcher], cub_values[1 - switcher], size);
-
     // памяти от cub_keys[0] до cub_values[0] должно хватить, чтобы вместить копию мортон кодов...
-  //  cudaMemcpy(cub_values[switcher], cub_values[1 - switcher], sizeof(int) * size, cudaMemcpyDeviceToDevice);
+    //  cudaMemcpy(cub_values[switcher], cub_values[1 - switcher], sizeof(int) * size, cudaMemcpyDeviceToDevice);
     gpudb::MortonCode *old = reinterpret_cast<gpudb::MortonCode *> (cub_keys[0]);
     cudaMemcpy(old, keys, sizeof(gpudb::MortonCode) * size, cudaMemcpyDeviceToDevice);
     copyKeys<<<grid, block>>>(keys, old, values, cub_values[1], size);
     cudaDeviceSynchronize();
     gpudb::GpuStackAllocator::getInstance().popPosition();
+    gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "radixsort %d ms", t.elapsedMillisecondsU64());
     return true;
 }
+
 /// } Morton code part
 ///////////////////////////////////////
 /// Global AABB {
@@ -283,6 +220,8 @@ bool computeGlobalAABB(gpudb::AABB *aabb, uint32_t size, gpudb::AABB &result) {
     gpudb::GpuStackAllocator::getInstance().pushPosition();
     StackAllocator::getInstance().pushPosition();
     do {
+        Timer t;
+        t.start();
         float *array = gpudb::GpuStackAllocator::getInstance().alloc<float>(size);
         float *minmax = gpudb::GpuStackAllocator::getInstance().alloc<float>(8);
         float *cpuMinMax = StackAllocator::getInstance().alloc<float>(8);
@@ -328,6 +267,8 @@ bool computeGlobalAABB(gpudb::AABB *aabb, uint32_t size, gpudb::AABB &result) {
 
         gpudb::GpuStackAllocator::getInstance().popPosition();
         StackAllocator::getInstance().popPosition();
+        cudaDeviceSynchronize();
+        gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "globalAABB %d ms", t.elapsedMillisecondsU64());
         return true;
     } while(0);
 
@@ -359,80 +300,99 @@ void initQueue(WorkQueue &queue, uint32_t size) {
 
 #define clzll(x) __clzll((x))
 #define clzllHost(x) ((x) == 0)? 64 : __builtin_clzll((x))
-
+#define maxComp(x , y) ((x) > (y))? (x) : (y)
 __global__
-void split(gpudb::HLBVH hlbvh, gpudb::MortonCode *keys, uint queueSize, uint nodeSize, WorkQueue qIn, WorkQueue qOut, uint *counter) {
+void split(gpudb::HLBVH hlbvh, gpudb::MortonCode *keys, uint queueSize, uint64_t bitshift, uint nodeSize, WorkQueue qIn, WorkQueue qOut, uint *counter) {
     uint thread = getGlobalIdx3DZXY();
+    bool isWorking = true;
     if (thread >= queueSize) {
-        return;
+        isWorking = false;
     }
+
+    int warpId = threadIdx.x / 32;
+    __shared__  cub::WarpReduce<int>::TempStorage warpReduceTemp[BLOCK_SIZE / 32];
+    __shared__  cub::WarpScan<int>::TempStorage warpScanTemp[BLOCK_SIZE / 32];
     uint2 rangeLeft, rangeRight, range;
-    range = qIn.range[thread];
-    rangeRight = range;
-    rangeLeft = range;
-
     bool isLeaf = true;
-
-    int parent = qIn.nodeId[thread];
-    if (getRangeSize(range) > nodeSize) {
-        isLeaf = false;
-        gpudb::MortonCode keyA = keys[getLeftBound(range)];
-        gpudb::MortonCode keyB = keys[getRightBound(range) - 1];
-        uint64_t ha = 64;
-        uint64_t mask;
-
-        bool high = false;
-        if (keyA.high != keyB.high) {
-            ha = clzll(keyA.high ^ keyB.high);
-            high = true;
-        } else if (keyA.low != keyB.low) {
-            ha = clzll(keyA.low ^ keyB.low);
-        }
-
-        if (ha == 64) {
-            uint mid = getLeftBound(range) + (getRightBound(range) - getLeftBound(range)) / 2;
-            getRightBound(rangeLeft) = getLeftBound(rangeRight) = mid;
-        } else {
-            mask = 1ULL << (64 - ha - 1);
-            uint left, right;
-            left = getLeftBound(range);
-            right = getRightBound(range);
-            bool test;
-            uint mid;
-
-            while (left < right) {
-                mid = left + (right - left) / 2;
-                if (high) {
-                    test = (keys[mid].high & mask) > 0;
-                } else {
-                    test = (keys[mid].low & mask) > 0;
-                }
-                /* key[mid] > key[left] */
-                if (test) {
-                    right = mid;
-                } else {
-                    left = mid + 1;
-                }
+    int node = 0;
+    if (isWorking) {
+        range = qIn.range[thread];
+        rangeRight = range;
+        rangeLeft = range;
+        node = qIn.nodeId[thread];
+        if (getRangeSize(range) > nodeSize) {
+            isLeaf = false;
+            gpudb::MortonCode keyA = keys[getLeftBound(range)];
+            gpudb::MortonCode keyB = keys[getRightBound(range) - 1];
+            uint64_t ha = 64;
+            bool high = false;
+            if (keyA.high != keyB.high) {
+                ha = clzll(keyA.high ^ keyB.high);
+                high = true;
+            } else if (keyA.low != keyB.low) {
+                ha = clzll(keyA.low ^ keyB.low);
             }
 
-            getRightBound(rangeLeft) = left;
-            getLeftBound(rangeRight) = left;
+            if (ha == 64) {
+                uint mid = getLeftBound(range) + (getRightBound(range) - getLeftBound(range)) / 2;
+                getRightBound(rangeLeft) = getLeftBound(rangeRight) = mid;
+            } else {
+                uint64_t mask = 1ULL << (64 - ha - 1);
+                uint left, right;
+                left = getLeftBound(range);
+                right = getRightBound(range);
+                bool test;
+                uint mid;
+
+                while (left < right) {
+                    mid = left + (right - left) / 2;
+                    if (high) {
+                        test = (keys[mid].high & mask) > 0;
+                    } else {
+                        test = (keys[mid].low & mask) > 0;
+                    }
+                    /* key[mid] > key[left] */
+                    if (test) {
+                        right = mid;
+                    } else {
+                        left = mid + 1;
+                    }
+                }
+                getRightBound(rangeLeft) = left;
+                getLeftBound(rangeRight) = left;
+            }
         }
     }
 
-    hlbvh.ranges[parent] = range;
+    int thread_data = 2;
     if (isLeaf) {
-        hlbvh.links[parent] = 0xFFFFFFFFU; // лист
-    } else {
-        uint offset = atomicAdd(counter, 2);
-        uint left = hlbvh.numNodes + offset;
+        thread_data = 0;
+    }
 
-        hlbvh.links[parent] = left;
+    int sum = cub::WarpReduce<int>(warpReduceTemp[warpId]).Sum(thread_data);
+    uint offset = 0;
 
-        qOut.nodeId[offset] = left;
-        qOut.nodeId[offset + 1] = left + 1;
-        qOut.range[offset] = rangeLeft;
-        qOut.range[offset + 1] = rangeRight;
+    if ((threadIdx.x & 31) == 0 && isWorking) {
+        offset = atomicAdd(counter, sum);
+        thread_data += offset;
+    }
+
+    cub::WarpScan<int>(warpScanTemp[warpId]).ExclusiveSum(thread_data, thread_data);
+    offset += thread_data;
+
+    if (isWorking) {
+        hlbvh.ranges[node] = range;
+        if (isLeaf) {
+            hlbvh.links[node] = gpudb::HLBVH::LEAF; // лист
+        } else {
+            uint left = hlbvh.numNodes + offset;
+            hlbvh.links[node] = left;
+
+            qOut.nodeId[offset] = left;
+            qOut.nodeId[offset + 1] = left + 1;
+            qOut.range[offset] = rangeLeft;
+            qOut.range[offset + 1] = rangeRight;
+        }
     }
 }
 
@@ -441,6 +401,8 @@ bool buildTreeStructure(gpudb::HLBVH &hlbvh, uint nodeSize, gpudb::MortonCode *k
     StackAllocator::getInstance().pushPosition();
 
     do {
+        Timer t;
+        t.start();
         WorkQueue work[2];
         work[0].nodeId = gpudb::GpuStackAllocator::getInstance().alloc<int>(size);
         work[0].range = gpudb::GpuStackAllocator::getInstance().alloc<uint2>(size);
@@ -461,11 +423,14 @@ bool buildTreeStructure(gpudb::HLBVH &hlbvh, uint nodeSize, gpudb::MortonCode *k
         uint queueSize = 1;
         dim3 block = dim3(BLOCK_SIZE);
         dim3 grid;
+        uint64_t bitshift = 95;
+
         while(queueSize > 0) {
             grid = gridConfigure(queueSize, block);
-            split<<<grid, block>>>(hlbvh, keys, queueSize, nodeSize, work[switcher], work[1 - switcher], counter);
+            split<<<grid, block>>>(hlbvh, keys, queueSize, bitshift, nodeSize, work[switcher], work[1 - switcher], counter);
             cudaMemcpy(&queueSize, counter, sizeof(uint), cudaMemcpyDeviceToHost);
             counter++;
+            bitshift--;
             hlbvh.numNodes += queueSize;
             switcher = 1 - switcher;
             if (queueSize > 0) {
@@ -474,6 +439,8 @@ bool buildTreeStructure(gpudb::HLBVH &hlbvh, uint nodeSize, gpudb::MortonCode *k
         }
         gpudb::GpuStackAllocator::getInstance().popPosition();
         StackAllocator::getInstance().popPosition();
+        cudaDeviceSynchronize();
+        gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "buildTreeStructure %d ms", t.elapsedMillisecondsU64());
         return true;
     } while(0);
 
@@ -499,26 +466,6 @@ void readBoxFromAABB(gpudb::AABB *aabb, uint id, float4 &min, float4 &max) {
     max.w = read.w.y;
 }
 
-__host__ __device__
-float4 fmin4f(float4 a, float4 b) {
-    float4 res;
-    res.x = (a.x < b.x)? a.x : b.x;
-    res.y = (a.y < b.y)? a.y : b.y;
-    res.z = (a.z < b.z)? a.z : b.z;
-    res.w = (a.w < b.w)? a.w : b.w;
-    return res;
-}
-
-__host__ __device__
-float4 fmax4f(float4 a, float4 b) {
-    float4 res;
-    res.x = (a.x > b.x)? a.x : b.x;
-    res.y = (a.y > b.y)? a.y : b.y;
-    res.z = (a.z > b.z)? a.z : b.z;
-    res.w = (a.w > b.w)? a.w : b.w;
-    return res;
-}
-
 __global__
 void refitBoxesKernel(gpudb::HLBVH hlbvh, gpudb::AABB *aabb, uint2 range, bool isRoot) {
     uint node = getGlobalIdx3DZXY();
@@ -528,7 +475,7 @@ void refitBoxesKernel(gpudb::HLBVH hlbvh, gpudb::AABB *aabb, uint2 range, bool i
 
     node += getLeftBound(range);
     int link = hlbvh.links[node];
-    if (link == -1) {
+    if (link == gpudb::HLBVH::LEAF) {
         uint2 nodeRange = hlbvh.ranges[node];
         float4 aabbMin;
         float4 aabbMax;
@@ -537,8 +484,8 @@ void refitBoxesKernel(gpudb::HLBVH hlbvh, gpudb::AABB *aabb, uint2 range, bool i
             float4 readAABBMin;
             float4 readAABBMax;
             readBoxFromAABB(aabb, hlbvh.references[j], readAABBMin, readAABBMax);
-            aabbMin = fmin4f(aabbMin, readAABBMin);
-            aabbMax = fmax4f(aabbMax, readAABBMax);
+            aabbMin = fmin(aabbMin, readAABBMin);
+            aabbMax = fmax(aabbMax, readAABBMax);
         }
         hlbvh.aabbMin[node] = aabbMin;
         hlbvh.aabbMax[node] = aabbMax;
@@ -551,8 +498,8 @@ void refitBoxesKernel(gpudb::HLBVH hlbvh, gpudb::AABB *aabb, uint2 range, bool i
         hlbvh.parents[link + 0] = node;
         hlbvh.parents[link + 1] = node;
 
-        hlbvh.aabbMin[node] = fmin4f(boxAaabbMin, boxBaabbMin);
-        hlbvh.aabbMax[node] = fmax4f(boxAaabbMax, boxBaabbMax);
+        hlbvh.aabbMin[node] = fmin(boxAaabbMin, boxBaabbMin);
+        hlbvh.aabbMax[node] = fmax(boxAaabbMax, boxBaabbMax);
     }
 
     if (isRoot) {
@@ -561,6 +508,8 @@ void refitBoxesKernel(gpudb::HLBVH hlbvh, gpudb::AABB *aabb, uint2 range, bool i
 }
 
 void refitBoxes(gpudb::HLBVH &hlbvh, gpudb::AABB *aabb, uint *offset) {
+    Timer t;
+    t.start();
     bool isRoot;
     dim3 block = dim3(BLOCK_SIZE);
     dim3 grid;
@@ -574,6 +523,8 @@ void refitBoxes(gpudb::HLBVH &hlbvh, gpudb::AABB *aabb, uint *offset) {
         grid = gridConfigure(getRangeSize(range), block);
         refitBoxesKernel<<<grid, block>>>(hlbvh, aabb, range, isRoot);
     }
+    cudaDeviceSynchronize();
+    gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "refitBoxes %d ms", t.elapsedMillisecondsU64());
 }
 /// } Refit boxes
 /////////////////////////////////////////////
@@ -626,23 +577,21 @@ bool boxIntersection(float4 aMin, float4 aMax, float4 bMin, float4 bMax) {
 }
 
 __global__
-void searchAABBkernel(gpudb::HLBVH hlbvh, float4 aabbMin, float4 aabbMax, uint size, bool *result) {
+void searchAABBkernel(gpudb::HLBVH hlbvh, float4 aabbMin, float4 aabbMax, uint size, bool *result, int *stack, int StackSize) {
     int id = getGlobalIdx3DZXY();
     if (id >= size) {
         return;
     }
 
-    int stack[800];
-    int stackTop = 0;
-    stack[stackTop++] = 0;
-    stack[stackTop++] = 1;
-    *result = false;
-    while(stackTop > 0) {
-        int nodeId = stack[stackTop - 1];
-        stackTop--;
+    GpuStack<int> st(stack, StackSize);
+    st.push(0);
+    st.push(1);
+    while(!st.empty()) {
+        int nodeId = st.top();
+        st.pop();
         float4 boxAmin = hlbvh.aabbMin[nodeId];
         float4 boxAmax = hlbvh.aabbMax[nodeId];
-        if (hlbvh.links[nodeId] == -1) {
+        if (hlbvh.links[nodeId] == gpudb::HLBVH::LEAF) {
             if (aabbMin.x == boxAmin.x
                 && aabbMin.y == boxAmin.y
                 && aabbMin.z == boxAmin.z
@@ -657,14 +606,15 @@ void searchAABBkernel(gpudb::HLBVH hlbvh, float4 aabbMin, float4 aabbMax, uint s
             }
         } else {
             if (boxIntersection(aabbMin, aabbMax, boxAmin, boxAmax)) {
-                stack[stackTop++] = hlbvh.links[nodeId] + 0;
-                stack[stackTop++] = hlbvh.links[nodeId] + 1;
+                st.push(hlbvh.links[nodeId] + 0);
+                st.push(hlbvh.links[nodeId] + 1);
             }
         }
     }
+    *result = false;
 }
-
-bool gpudb::HLBVH::search(AABB aabb) {
+/*
+bool gpudb::HLBVH::search(AABB *aabb, size) {
     dim3 block = dim3(BLOCK_SIZE);
     dim3 grid = gridConfigure(1, block);
     float4 min, max;
@@ -680,15 +630,19 @@ bool gpudb::HLBVH::search(AABB aabb) {
     gpudb::GpuStackAllocator::getInstance().pushPosition();
     do {
         bool *result = gpudb::GpuStackAllocator::getInstance().alloc<bool>();
-        if (result == nullptr) {
+        int stackSize = 800;
+        int *stack = gpudb::GpuStackAllocator::getInstance().alloc<int>(stackSize);
+        if (result == nullptr || stack == nullptr) {
             break;
         }
-        searchAABBkernel<<<grid, block>>>(*this, min, max, 1, result);
+        searchAABBkernel<<<grid, block>>>(*this, min, max, 1, result, stack, stackSize);
         bool cpuResult;
         cudaMemcpy(&cpuResult, result, sizeof(bool), cudaMemcpyDeviceToHost);
         gpudb::GpuStackAllocator::getInstance().popPosition();
         return cpuResult;
     } while(0);
+    gLogWrite(LOG_MESSAGE_TYPE::ERROR, "not enough memory");
     gpudb::GpuStackAllocator::getInstance().popPosition();
     return false;
 }
+*/

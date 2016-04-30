@@ -3,7 +3,7 @@
 gpudb::gpuAllocator &gpudb::gpuAllocator::getInstance() {
     static gpuAllocator *allocator = new gpuAllocator();
     static bool init = false;
-    if (!init) {
+    if (init == false) {
         init = true;
         SingletonFactory::getInstance().registration<gpuAllocator>(allocator);
         dynamic_cast<Singleton*>(allocator)->dependOn(Log::getInstance());
@@ -30,4 +30,5 @@ void gpudb::gpuAllocator::freeAll() {
         cudaFree((void*)ptr);
     }
     memoryPtrs.clear();
+    cudaDeviceReset();
 }

@@ -2,19 +2,9 @@
 #include <set>
 #include <map>
 #include <iostream>
+#include "timer.h"
 #include "database.h"
 #include "hlbvh.h"
-
-float clamp(float in, float min, float max) {
-    float res = in;
-    if (res > max) {
-        res = max;
-    }
-    if (res < min) {
-        res = min;
-    }
-    return res;
-}
 
 gpudb::AABB globalAABB;
 bool init;
@@ -61,11 +51,15 @@ gpudb::AABB genAABB() {
 
 int main()
 {
+    srand(time(0));
     DataBase &db = DataBase::getInstance();
+    Log::getInstance().showFilePathLevel(2);
+
     TableDescription table;
     table.setName("test1");
     table.setSpatialKey("Область", SpatialType::POLYGON);
-    table.setTemporalKey("Время", TemporalType::BITEMPORAL_TIME);
+    table.setTemporalKey("Время", TemporalType::TRANSACTION_TIME);
+
     AttributeDescription d1;
     d1.name = "col";
     d1.type = Type::STRING;
@@ -73,67 +67,89 @@ int main()
     AttributeDescription d2;
     d2.name = "col2";
     d2.type = Type::INT;
+    AttributeDescription d3;
+    d3.name = "col3";
+    d3.type = Type::DATE_TYPE;
     table.addColumn(d1);
     table.addColumn(d2);
+    table.addColumn(d3);
+    table.delColumn(d3);
 
-    Log::getInstance().showFilePathLevel(2);
     Attribute v;
     v.setName("col");
-    v.setValue(false, "this is string");
+    v.setValue(false, std::string("this is string"));
     Row newRow;
     Attribute v2;
     v2.setName("col2");
     v2.setValue(false, 77771);
+    Attribute v3;
+    v3.setName("col3");
+    Date date;
+    date.set(2016, 12, 31, 5, 23, 48, 453789);
+    Date date2;
+    date2.setFromCode(date.codeDate());
+    date2.setDate(2017, 12, 12);
+
+    v3.setValue(false, date);
 
     newRow.spatialKey.name = "Область";
     newRow.temporalKey.name = "Время";
     newRow.spatialKey.type = SpatialType::POLYGON;
-    newRow.temporalKey.type = TemporalType::BITEMPORAL_TIME;
-    newRow.values.insert(v);
-    newRow.values.insert(v2);
+    newRow.temporalKey.type = TemporalType::TRANSACTION_TIME;
+    newRow.temporalKey.validTimeS = date;
+    newRow.temporalKey.validTimeE = date2;
+    newRow.addAttribute(v);
+    newRow.addAttribute(v2);
+    newRow.addAttribute(v3);
+    newRow.spatialKey.points.push_back(make_float2(0.5, 0));
+    newRow.spatialKey.points.push_back(make_float2(1, 0));
+    newRow.spatialKey.points.push_back(make_float2(1, 1.999));
+
+    std::cout << newRow.spatialKey.isValid() << std::endl;
 
     db.createTable(table);
     db.insertRow("test1", newRow);
 
-    newRow.values.clear();
+    newRow.clearAttributes();
     v.setValue(true, "");
     v2.setValue(true, 0);
-    newRow.values.insert(v);
-    newRow.values.insert(v2);
+    newRow.addAttribute(v);
+    newRow.addAttribute(v2);
     db.insertRow("test1", newRow);
+    newRow.spatialKey.points.push_back(make_float2(1, 3));
 
-    newRow.values.clear();
+    newRow.clearAttributes();
     v.setValue(true, "");
     v2.setValue(true, 0);
-    newRow.values.insert(v);
-    newRow.values.insert(v2);
+    newRow.addAttribute(v);
+    newRow.addAttribute(v2);
     db.insertRow("test1", newRow);
 
-    newRow.values.clear();
+    newRow.clearAttributes();
     v.setValue(true, "");
     v2.setValue(true, 0);
-    newRow.values.insert(v);
-    newRow.values.insert(v2);
+    newRow.addAttribute(v);
+    newRow.addAttribute(v2);
     db.insertRow("test1", newRow);
 
-    newRow.values.clear();
-    v.setValue(false, "dddddd");
+    newRow.clearAttributes();
+    v.setValue(false, "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd");
     v2.setValue(true, 0);
-    newRow.values.insert(v);
-    newRow.values.insert(v2);
+    newRow.addAttribute(v);
+    newRow.addAttribute(v2);
     db.insertRow("test1", newRow);
 
-    newRow.values.clear();
+    newRow.clearAttributes();
     v.setValue(true, "");
     v2.setValue(false, 0);
-    newRow.values.insert(v);
-    newRow.values.insert(v2);
+    newRow.addAttribute(v);
+    newRow.addAttribute(v2);
     db.insertRow("test1", newRow);
 
     db.showTable("test1");
-    gpudb::HLBVH bvh;
+    /*gpudb::HLBVH bvh;
     gpudb::GpuStackAllocator::getInstance().pushPosition();
-    const int size =  25000;
+    const int size =  8000000;
     gpudb::AABB *aabb = gpudb::GpuStackAllocator::getInstance().alloc<gpudb::AABB>(size);
     StackAllocator::getInstance().pushPosition();
     gpudb::AABB *cpuAAABB = StackAllocator::getInstance().alloc<gpudb::AABB>(size);
@@ -145,17 +161,25 @@ int main()
            globalAABB.x.x, globalAABB.x.y, globalAABB.y.x, globalAABB.y.y,
            globalAABB.z.x, globalAABB.z.y, globalAABB.w.x, globalAABB.w.y);
     cudaMemcpy(aabb, cpuAAABB, sizeof(gpudb::AABB) * size, cudaMemcpyHostToDevice);
+    Timer t;
+    t.start();
     bvh.build(aabb, size);
+    cudaDeviceSynchronize();
+    printf("bvh build %d ms\n", t.elapsedMillisecondsU64());
 
-    for (int i = 0; i < size; i++) {
+    t.start();
+    for (int i = 1000; i < 1001; i++) {
         if (!bvh.search(cpuAAABB[i])) {
-            printf("!!!!\n");
+            printf("%d\n ", 0);
         }
     }
+    cudaDeviceSynchronize();
+    printf("bvh search %d ms %d levels\n", t.elapsedMillisecondsU64(), bvh.numBVHLevels);
 
+    bvh.free();
 
     StackAllocator::getInstance().popPosition();
-    gpudb::GpuStackAllocator::getInstance().popPosition();
+    gpudb::GpuStackAllocator::getInstance().popPosition();*/
     db.deinit();
     return 0;
 }

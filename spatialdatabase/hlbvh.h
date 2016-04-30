@@ -1,9 +1,12 @@
 #pragma once
 #include "types.h"
+#include "utils.h"
 #include "gpuallocator.h"
 #include "stackallocator.h"
 #include "gpustackallocator.h"
 #include "aabb.h"
+#include "gpustack.h"
+#include "timer.h"
 
 namespace gpudb {
     class HLBVH {
@@ -13,7 +16,7 @@ namespace gpudb {
     public:
         bool alloc(uint32_t size);
         void free();
-
+        static const int LEAF;
         uint32_t numNodes;
         uint32_t numReferences;
         uint32_t numBVHLevels;
@@ -25,5 +28,7 @@ namespace gpudb {
         int *parents;
         uint2 *ranges;
         int *links;
+        uint8_t *memory;
+        uint64_t memorySize;
     };
 }

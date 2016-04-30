@@ -2,6 +2,8 @@
 
 std::string typeToString(Type t) {
     switch (t) {
+        case Type::DATE_TYPE:
+            return "DATE_TYPE";
         case Type::STRING:
             return "STRING";
         case Type::INT:
@@ -16,8 +18,10 @@ std::string typeToString(Type t) {
 
 uint64_t typeSize(Type t) {
     switch (t) {
+        case Type::DATE_TYPE:
+            return sizeof(Date);
         case Type::STRING:
-            return 255;
+            return 256;
         case Type::INT:
             return 8;
         case Type::REAL:

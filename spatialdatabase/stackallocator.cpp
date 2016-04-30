@@ -13,6 +13,7 @@ StackAllocator &StackAllocator::getInstance() {
     static StackAllocator* ptr = new StackAllocator();
     static bool init = false;
     if (init == false) {
+        init = true;
         if (SingletonFactory::getInstance().registration<StackAllocator>(ptr) == false) {
             gLogWrite(LOG_MESSAGE_TYPE::ERROR, "stackallocator was not registrated");
             exit(-1);

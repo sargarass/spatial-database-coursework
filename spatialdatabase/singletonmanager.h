@@ -14,7 +14,7 @@ public:
 
     bool dependOn(Singleton &s);
 protected:
-    Singleton() {id = 0xFFFFFFFFFFFULL;}
+    Singleton() {id = 0xFFFFFFFFFFFFFFFFULL;}
     bool checkOnCicle(Singleton *link);
     virtual ~Singleton(){}
     std::list<Singleton *> linkFrom;
@@ -41,7 +41,7 @@ public:
         return true;
     }
 
-    virtual ~SingletonFactory();
+    ~SingletonFactory();
 private:
     void bfsDelete(std::vector<bool> &used, Singleton *link);
     std::vector<Singleton *> singletonGraph;

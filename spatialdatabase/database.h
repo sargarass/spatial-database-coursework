@@ -25,6 +25,7 @@ public:
 
     template<typename T>
     bool setValue(bool isNull, T val = T()) {
+        UNUSED_PARAM_HANDLER(isNull, val);
         return false;
     }
 
@@ -37,6 +38,7 @@ private:
         if (value) {
             delete [] (char*)(value);
         }
+
         uint64_t type_size = typeSize(t);
         uint8_t* value_ptr = new uint8_t[type_size];
         switch(t) {
@@ -67,24 +69,64 @@ class SpatialKey {
 public:
     SpatialType type;
     std::string name;
-    std::list<float2> points;
+    std::vector<float2> points;
+
+    bool isValid();
+    bool addVertex(float2 v) {UNUSED_PARAM_HANDLER(v); return false; }
+    bool delVertex(float2 v) {UNUSED_PARAM_HANDLER(v); return false; }
 };
 
 class TemportalKey {
+    friend class DataBase;
 public:
     std::string name;
     TemporalType type;
-    uint64_t validTimeS;
-    uint64_t validTimeE;
 
-    uint64_t transactionTypeS;
-    uint64_t transactionTypeE;
+    Date validTimeS;
+    Date validTimeE;
+
+    bool isValid() {
+        bool validT = validTimeE.isValid() && validTimeS.isValid() && (validTimeS.codeDate() <= validTimeE.codeDate());
+        bool transactT = transactionTime.isValid();
+        if (type == BITEMPORAL_TIME) {
+            return validT && transactT;
+        }
+        if (type == TRANSACTION_TIME) {
+            return transactT;
+        }
+        if (type == VALID_TIME) {
+            return validT;
+        }
+        return false;
+    }
+protected:
+    Date transactionTime;
 };
 
 class Row {
+    friend class DataBase;
 public:
     SpatialKey spatialKey;
     TemportalKey temporalKey;
+
+    bool addAttribute(Attribute const& atr) {
+        return values.insert(atr).second;
+    }
+
+    bool delAttribute(std::string const &atr) {
+        Attribute tmp;
+        if (!tmp.setName(atr)) {
+            return false;
+        }
+
+        return values.erase(tmp);
+    }
+
+    void clearAttributes() {
+        values.clear();
+    }
+
+protected:
     std::set<Attribute> values;
 };
 
@@ -96,7 +138,7 @@ public:
     bool insertRow(std::string tableName, Row row);
     bool createTable(TableDescription table);
     bool showTable(std::string tableName);
-
+    bool showTable(gpudb::GpuTable const &table, TableDescription &description);
     static DataBase &getInstance() {
         static DataBase *db = new DataBase;
         static bool init = false;
@@ -123,10 +165,36 @@ public:
         deinit();
     }
 private:
+    void storeGPU(gpudb::GpuRow *dst, gpudb::GpuRow *src, uint64_t memsize);
+    void loadCPU(gpudb::GpuRow *dstCPU, gpudb::GpuRow *srcGPU, uint64_t &memsize);
+
     DataBase(){
-        gpudb::GpuStackAllocator::getInstance().resize(512 * 1024 * 1024);
-        StackAllocator::getInstance().resize(512 * 1024 * 1024);
+        gpudb::GpuStackAllocator::getInstance().resize(512ULL * 1024ULL * 1024ULL);
+        StackAllocator::getInstance().resize(1024ULL * 1024ULL * 1024ULL);
     }
     std::map<std::string, gpudb::GpuTable*> tables;
     std::map<std::string, TableDescription> tablesType;
 };
+
+template<>
+bool Attribute::setValue(bool isNull, int64_t const val);
+template<>
+bool Attribute::setValue(bool isNull, int32_t const val);
+template<>
+bool Attribute::setValue(bool isNull, uint32_t const val);
+template<>
+bool Attribute::setValue(bool isNull, uint64_t const val);
+template<>
+bool Attribute::setValue(bool isNull, float const val);
+template<>
+bool Attribute::setValue(bool isNull, double const val);
+template<>
+bool Attribute::setValue(bool isNull, std::string const &val);
+template<>
+bool Attribute::setValue(bool isNull, std::string val);
+template<>
+bool Attribute::setValue(bool isNull, char *val);
+template<>
+bool Attribute::setValue(bool isNull, Date const &date);
+template<>
+bool Attribute::setValue(bool isNull, Date const date);

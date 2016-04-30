@@ -3,6 +3,8 @@
 #include <stdarg.h>
 #include "string.h"
 #include <string>
+
+
 Log::Log() {
     m_fileLVL = -1;
 }

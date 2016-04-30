@@ -2,7 +2,6 @@
 #include "types.h"
 #include <cfloat>
 #include <cmath>
-
 namespace gpudb {
 #define AABBmin(p) p.x
 #define AABBmax(p) p.y
@@ -109,7 +108,7 @@ namespace gpudb {
             }
 
             p = 63;
-            for (int i = 0; i < 24; i++) {
+            for (int i = 0; i < 8; i++) {
                 code.low |= ((uint64_t) ((centroidInt.x & 0x80000000) >> 31)) << (p    );
                 code.low |= ((uint64_t) ((centroidInt.y & 0x80000000) >> 31)) << (p - 1);
                 code.low |= ((uint64_t) ((centroidInt.z & 0x80000000) >> 31)) << (p - 2);
