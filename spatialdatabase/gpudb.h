@@ -9,22 +9,56 @@
 #include <thrust/thrust/device_vector.h>
 //Miller cylindrical projection
 #include "utils.h"
+#include "hlbvh.h"
 
 namespace gpudb {
 
     struct GpuColumnSpatialKey {
         char name[NAME_MAX_LEN];
         SpatialType type;
+
+        GpuColumnSpatialKey() {}
+
+        GpuColumnSpatialKey(GpuColumnSpatialKey const  &atr) {
+            *this = atr;
+        }
+
+
+        void operator=(GpuColumnSpatialKey const &b) {
+            type = b.type;
+            memcpy(name, b.name, NAME_MAX_LEN);
+        }
     };
 
     struct GpuColumnTemoralKey {
         char name[NAME_MAX_LEN];
         TemporalType type;
+        GpuColumnTemoralKey(GpuColumnTemoralKey const &atr) {
+            *this = atr;
+        }
+
+        GpuColumnTemoralKey() {}
+
+        void operator=(GpuColumnTemoralKey const &b) {
+            type = b.type;
+            memcpy(name, b.name, NAME_MAX_LEN);
+        }
     };
 
     struct GpuColumnAttribute {
         char name[NAME_MAX_LEN];
         Type type;
+        FUNC_PREFIX
+        GpuColumnAttribute() {}
+        FUNC_PREFIX
+        GpuColumnAttribute(GpuColumnAttribute const &atr) {
+            *this = atr;
+        }
+        FUNC_PREFIX
+        void operator=(GpuColumnAttribute const &b) {
+            type = b.type;
+            memcpy(name, b.name, NAME_MAX_LEN);
+        }
     };
 
     struct  __align__(16) GpuLine {
@@ -89,13 +123,12 @@ namespace gpudb {
         TemporalKey temporalPart;
         Value *value;
         uint64_t valueSize;
-        uint64_t rowSize;
+
         void operator=(GpuRow const &b) {
             spatialPart = b.spatialPart;
             temporalPart = b.temporalPart;
             value = b.value;
             valueSize = b.valueSize;
-            rowSize = b.rowSize;
         }
     };
 
@@ -103,14 +136,15 @@ namespace gpudb {
         GpuTable();
         ~GpuTable();
         char name[NAME_MAX_LEN];
+        HLBVH bvh;
         GpuColumnSpatialKey spatialKey;
         GpuColumnTemoralKey temporalKey;
         thrust::device_vector<GpuColumnAttribute> columns;
-        thrust::host_vector<GpuColumnAttribute> columnsCPU;
         thrust::device_vector<GpuRow*> rows;
+        std::vector<uint64_t> rowsSize;
         bool set(TableDescription table);
         bool setName(std::string const &string);
-        bool insertRow(gpudb::GpuRow*  row);
+        bool insertRow(gpudb::GpuRow*  row, uint64_t memsize);
     };
 
 }

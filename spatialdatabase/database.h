@@ -3,133 +3,8 @@
 #include "stackallocator.h"
 #include "types.h"
 #include "tabledescription.h"
-
-class Attribute {
-    friend class gpudb::GpuTable;
-    friend class DataBase;
-public:
-    Attribute() {
-        type = Type::UNKNOWN;
-        isNull = true;
-        value = nullptr;
-    }
-
-    bool setName(std::string name) {
-        if (name.length() > NAME_MAX_LEN) {
-            return false;
-        }
-
-        this->name = name;
-        return true;
-    }
-
-    template<typename T>
-    bool setValue(bool isNull, T val = T()) {
-        UNUSED_PARAM_HANDLER(isNull, val);
-        return false;
-    }
-
-    bool operator<(Attribute const &b) const {
-        return name < b.name;
-    }
-
-private:
-    bool setValueImp(Type t, void const *val) {
-        if (value) {
-            delete [] (char*)(value);
-        }
-
-        uint64_t type_size = typeSize(t);
-        uint8_t* value_ptr = new uint8_t[type_size];
-        switch(t) {
-            case Type::STRING:
-                {
-                    memset(value_ptr, 0, type_size);
-                    uint64_t copysize = std::min(type_size, (uint64_t)(strlen((char*) val)));
-                    memcpy(value_ptr, val, copysize);
-                    value_ptr[copysize] = 0;
-                }
-                break;
-            default:
-                memcpy(value_ptr, val, type_size);
-                break;
-        }
-
-        value = reinterpret_cast<void*>(value_ptr);
-        return true;
-    }
-
-    std::string name;
-    Type type;
-    bool isNull;
-    void *value;
-};
-
-class SpatialKey {
-public:
-    SpatialType type;
-    std::string name;
-    std::vector<float2> points;
-
-    bool isValid();
-    bool addVertex(float2 v) {UNUSED_PARAM_HANDLER(v); return false; }
-    bool delVertex(float2 v) {UNUSED_PARAM_HANDLER(v); return false; }
-};
-
-class TemportalKey {
-    friend class DataBase;
-public:
-    std::string name;
-    TemporalType type;
-
-    Date validTimeS;
-    Date validTimeE;
-
-    bool isValid() {
-        bool validT = validTimeE.isValid() && validTimeS.isValid() && (validTimeS.codeDate() <= validTimeE.codeDate());
-        bool transactT = transactionTime.isValid();
-        if (type == BITEMPORAL_TIME) {
-            return validT && transactT;
-        }
-        if (type == TRANSACTION_TIME) {
-            return transactT;
-        }
-        if (type == VALID_TIME) {
-            return validT;
-        }
-        return false;
-    }
-protected:
-    Date transactionTime;
-};
-
-class Row {
-    friend class DataBase;
-public:
-    SpatialKey spatialKey;
-    TemportalKey temporalKey;
-
-    bool addAttribute(Attribute const& atr) {
-        return values.insert(atr).second;
-    }
-
-    bool delAttribute(std::string const &atr) {
-        Attribute tmp;
-        if (!tmp.setName(atr)) {
-            return false;
-        }
-
-        return values.erase(tmp);
-    }
-
-    void clearAttributes() {
-        values.clear();
-    }
-
-protected:
-    std::set<Attribute> values;
-};
-
+#include "row.h"
+#include "temptable.h"
 
 class DataBase : public Singleton {
     typedef std::pair<std::string, TableDescription> tablesTypePair;
@@ -138,7 +13,9 @@ public:
     bool insertRow(std::string tableName, Row row);
     bool createTable(TableDescription table);
     bool showTable(std::string tableName);
-    bool showTable(gpudb::GpuTable const &table, TableDescription &description);
+    bool showTable(gpudb::GpuTable const &table, const TableDescription &description, uint tabs =0);
+    bool selectTable(std::string tableName, TempTable &table);
+
     static DataBase &getInstance() {
         static DataBase *db = new DataBase;
         static bool init = false;
@@ -165,15 +42,18 @@ public:
         deinit();
     }
 private:
-    void storeGPU(gpudb::GpuRow *dst, gpudb::GpuRow *src, uint64_t memsize);
-    void loadCPU(gpudb::GpuRow *dstCPU, gpudb::GpuRow *srcGPU, uint64_t &memsize);
-
+    static void storeGPU(gpudb::GpuRow *dst, gpudb::GpuRow *src, uint64_t memsize);
+    static void loadCPU(gpudb::GpuRow *dstCPU, gpudb::GpuRow *srcGPU, uint64_t memsize);
+    static bool copyTempTable(TableDescription const &description, gpudb::GpuTable const *gpuTable, TempTable &table);
+    static void myprintf(uint tabs, char *format ...);
     DataBase(){
         gpudb::GpuStackAllocator::getInstance().resize(512ULL * 1024ULL * 1024ULL);
         StackAllocator::getInstance().resize(1024ULL * 1024ULL * 1024ULL);
     }
     std::map<std::string, gpudb::GpuTable*> tables;
     std::map<std::string, TableDescription> tablesType;
+    friend bool pointxpointKnearestNeighbor(TempTable const &a, TempTable const &b, uint k, TempTable &result);
+    friend class TempTable;
 };
 
 template<>
@@ -198,3 +78,13 @@ template<>
 bool Attribute::setValue(bool isNull, Date const &date);
 template<>
 bool Attribute::setValue(bool isNull, Date const date);
+
+template<typename T1, typename T2, typename T3> FUNC_PREFIX
+T1 *newAddress(T1 *old, T2 *oldMemory, T3 *newMemory) {
+    uintptr_t step1 =  reinterpret_cast<uintptr_t>(old);
+    step1 -= reinterpret_cast<uintptr_t>(oldMemory);
+    step1 += reinterpret_cast<uintptr_t>(newMemory);
+    return reinterpret_cast<T1*>(step1);
+}
+
+bool pointxpointKnearestNeighbor(TempTable const &a, TempTable const &b, uint k, TempTable &result);

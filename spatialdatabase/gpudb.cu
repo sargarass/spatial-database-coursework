@@ -2,47 +2,46 @@
 #include "exception"
 #include "utils.h"
 #include <cub/cub/cub.cuh>
-
 #define SWITCH_RUN(spatialtype, temporaltype, kernel, grid, block, parameters, ...) \
 switch(spatialtype) { \
-    case POINT: { \
+    case SpatialType::POINT: { \
         switch(temporaltype) { \
-            case BITEMPORAL_TIME: \
-                kernel<POINT, BITEMPORAL_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
+            case TemporalType::BITEMPORAL_TIME: \
+                kernel<SpatialType::POINT, TemporalType::BITEMPORAL_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
                 break; \
-            case VALID_TIME: \
-                kernel<POINT, VALID_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
+            case TemporalType::VALID_TIME: \
+                kernel<SpatialType::POINT, TemporalType::VALID_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
                 break; \
-            case TRANSACTION_TIME: \
-                kernel<POINT, TRANSACTION_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
+            case TemporalType::TRANSACTION_TIME: \
+                kernel<SpatialType::POINT, TemporalType::TRANSACTION_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
                 break; \
         } \
     } \
     break; \
-    case POLYGON: { \
+    case SpatialType::POLYGON: { \
         switch(temporaltype) { \
-            case BITEMPORAL_TIME: \
-                kernel<POLYGON, BITEMPORAL_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
+            case TemporalType::BITEMPORAL_TIME: \
+                kernel<SpatialType::POLYGON, TemporalType::BITEMPORAL_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
                 break; \
-            case VALID_TIME: \
-                kernel<POLYGON, VALID_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
+            case TemporalType::VALID_TIME: \
+                kernel<SpatialType::POLYGON, TemporalType::VALID_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
                 break; \
-            case TRANSACTION_TIME: \
-                kernel<POLYGON, TRANSACTION_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
+            case TemporalType::TRANSACTION_TIME: \
+                kernel<SpatialType::POLYGON, TemporalType::TRANSACTION_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
                 break; \
         } \
     }\
     break; \
-    case LINE: { \
+    case SpatialType::LINE: { \
         switch(temporaltype) { \
-            case BITEMPORAL_TIME: \
-                kernel<LINE, BITEMPORAL_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
+            case TemporalType::BITEMPORAL_TIME: \
+                kernel<SpatialType::LINE, TemporalType::BITEMPORAL_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
                 break; \
-            case VALID_TIME: \
-                kernel<LINE, VALID_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
+            case TemporalType::VALID_TIME: \
+                kernel<SpatialType::LINE, TemporalType::VALID_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
                 break; \
-            case TRANSACTION_TIME: \
-                kernel<LINE, TRANSACTION_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
+            case TemporalType::TRANSACTION_TIME: \
+                kernel<SpatialType::LINE, TemporalType::TRANSACTION_TIME><<<grid, block>>>(parameters, ##__VA_ARGS__); \
                 break; \
         } \
     } \
@@ -62,7 +61,7 @@ gpudb::GpuTable::~GpuTable() {
 
 void gpudb::SpatialKey::boundingBox(AABB *box) {
     switch(type) {
-        case POINT:
+        case SpatialType::POINT:
         {
             GpuPoint k = *((GpuPoint*)key);
             AABBmin(box->x) = k.p.x;
@@ -72,7 +71,7 @@ void gpudb::SpatialKey::boundingBox(AABB *box) {
             AABBmax(box->y) = k.p.y;
         }
         break;
-        case LINE:
+        case SpatialType::LINE:
         {
             GpuLine line = *((GpuLine*)key);
             float2 min = line.points[0];
@@ -87,7 +86,7 @@ void gpudb::SpatialKey::boundingBox(AABB *box) {
             AABBmax(box->y) = max.y;
         }
         break;
-        case POLYGON:
+        case SpatialType::POLYGON:
         {
             GpuPolygon polygon = *((GpuPolygon*)key);
             float2 min = polygon.points[0];
@@ -159,10 +158,8 @@ bool gpudb::GpuTable::set(TableDescription table) {
         vec.push_back(att);
     }
 
-    columns.resize(vec.size());
-    columnsCPU.resize(vec.size());
+    columns.reserve(vec.size());
     thrust::copy(vec.begin(), vec.end(), columns.begin());
-    thrust::copy(vec.begin(), vec.end(), columnsCPU.begin());
     std::memcpy(this->spatialKey.name, table.spatialKeyName.c_str(), table.spatialKeyName.length());
     std::memcpy(this->temporalKey.name, table.temporalKeyName.c_str(), table.temporalKeyName.length());
     this->spatialKey.type = table.spatialKeyType;
@@ -182,56 +179,9 @@ void testIdenticalKeys(gpudb::GpuRow** rows, uint size, gpudb::GpuRow *nRow, int
     gpudb::GpuRow newRow = *nRow;
     bool spatialEx = false;
     bool temporalEx = false;
-    switch (spatialtype) {
-        case POINT:
-        {
-            gpudb::GpuPoint *point = (gpudb::GpuPoint*)row.spatialPart.key;
-            gpudb::GpuPoint *pointNewRow = (gpudb::GpuPoint*)newRow.spatialPart.key;
-            if (point->p == pointNewRow->p) {
-                spatialEx = true;
-            }
-        }
-        break;
-        case LINE:
-        {
-            gpudb::GpuLine *line = (gpudb::GpuLine*)row.spatialPart.key;
-            gpudb::GpuLine *lineNewRow = (gpudb::GpuLine*)newRow.spatialPart.key;
-            if (line->size == lineNewRow->size) {
-                bool identical = true;
-                for (int i = 0; i < line->size; i++) {
-                    if (line->points[i] != lineNewRow->points[i]) {
-                        identical = false;
-                        break;
-                    }
-                }
-                if (identical) {
-                    spatialEx = true;
-                }
-            }
-        }
-        break;
-        case POLYGON:
-        {
-            gpudb::GpuPolygon *polygon = reinterpret_cast<gpudb::GpuPolygon*>(row.spatialPart.key);
-            gpudb::GpuPolygon *polygonNewRow = reinterpret_cast<gpudb::GpuPolygon*>(newRow.spatialPart.key);
-            if (polygon->size == polygonNewRow->size) {
-                bool identical = true;
-                for (int i = 0; i < polygon->size; i++) {
-                    if (polygon->points[i] != polygon->points[i]) {
-                        identical = false;
-                        break;
-                    }
-                }
-                if (identical) {
-                    spatialEx = true;
-                }
-            }
-        }
-        break;
-    }
 
     switch(temporaltype) {
-        case BITEMPORAL_TIME:
+        case TemporalType::BITEMPORAL_TIME:
         {
             if (row.temporalPart.validTimeSCode == newRow.temporalPart.validTimeSCode &&
                 row.temporalPart.validTimeECode == newRow.temporalPart.validTimeECode &&
@@ -240,7 +190,7 @@ void testIdenticalKeys(gpudb::GpuRow** rows, uint size, gpudb::GpuRow *nRow, int
             }
         }
         break;
-        case VALID_TIME:
+        case TemporalType::VALID_TIME:
         {
             if (row.temporalPart.validTimeSCode == newRow.temporalPart.validTimeSCode &&
                 row.temporalPart.validTimeECode == newRow.temporalPart.validTimeECode) {
@@ -248,7 +198,7 @@ void testIdenticalKeys(gpudb::GpuRow** rows, uint size, gpudb::GpuRow *nRow, int
             }
         }
         break;
-        case TRANSACTION_TIME:
+        case TemporalType::TRANSACTION_TIME:
         {
             if (row.temporalPart.transactionTimeCode == newRow.temporalPart.transactionTimeCode) {
                 temporalEx = true;
@@ -257,10 +207,62 @@ void testIdenticalKeys(gpudb::GpuRow** rows, uint size, gpudb::GpuRow *nRow, int
         break;
     }
 
+    if (temporalEx) {
+        switch (spatialtype) {
+            case SpatialType::POINT:
+            {
+                gpudb::GpuPoint *point = (gpudb::GpuPoint*)row.spatialPart.key;
+                gpudb::GpuPoint *pointNewRow = (gpudb::GpuPoint*)newRow.spatialPart.key;
+                if (point->p == pointNewRow->p) {
+                    spatialEx = true;
+                }
+            }
+            break;
+            case SpatialType::LINE:
+            {
+                gpudb::GpuLine *line = (gpudb::GpuLine*)row.spatialPart.key;
+                gpudb::GpuLine *lineNewRow = (gpudb::GpuLine*)newRow.spatialPart.key;
+                if (line->size == lineNewRow->size) {
+                    bool identical = true;
+                    for (int i = 0; i < line->size; i++) {
+                        if (line->points[i] != lineNewRow->points[i]) {
+                            identical = false;
+                            break;
+                        }
+                    }
+                    if (identical) {
+                        spatialEx = true;
+                    }
+                }
+            }
+            break;
+            case SpatialType::POLYGON:
+            {
+                gpudb::GpuPolygon *polygon = reinterpret_cast<gpudb::GpuPolygon*>(row.spatialPart.key);
+                gpudb::GpuPolygon *polygonNewRow = reinterpret_cast<gpudb::GpuPolygon*>(newRow.spatialPart.key);
+                if (polygon->size == polygonNewRow->size) {
+                    bool identical = true;
+                    for (int i = 0; i < polygon->size; i++) {
+                        if (polygon->points[i] != polygon->points[i]) {
+                            identical = false;
+                            break;
+                        }
+                    }
+                    if (identical) {
+                        spatialEx = true;
+                    }
+                }
+            }
+            break;
+        }
+    }
+
+
     result[idx] = temporalEx && spatialEx;
 }
 
-bool gpudb::GpuTable::insertRow(gpudb::GpuRow* row) {
+bool gpudb::GpuTable::insertRow(gpudb::GpuRow* row, uint64_t memsize) {
+    gpudb::GpuStackAllocator::getInstance().pushPosition();
     do {
         int cpuRes = 0;
         if (rows.size() > 0) {
@@ -278,15 +280,18 @@ bool gpudb::GpuTable::insertRow(gpudb::GpuRow* row) {
 
             SWITCH_RUN(spatialKey.type, temporalKey.type, testIdenticalKeys, grid, block, thrust::raw_pointer_cast(rows.data()), rows.size(), row, result);
             cub::DeviceReduce::Sum(tmp, temp_size, result, resgpu, rows.size());
-            cudaMemcpy(&cpuRes, resgpu, rows.size() * sizeof(int), cudaMemcpyDeviceToHost);
+            cudaMemcpy(&cpuRes, resgpu, sizeof(int), cudaMemcpyDeviceToHost);
             gpudb::GpuStackAllocator::getInstance().free(result);
         }
 
         gpudb::GpuStackAllocator::getInstance().popPosition();
+
         if (cpuRes) {
             return false;
         }
+
         this->rows.push_back(row);
+        this->rowsSize.push_back(memsize);
         return true;
     } while(0);
     gpudb::GpuStackAllocator::getInstance().popPosition();

@@ -2,7 +2,22 @@
 #include "utils.h"
 #include <cub/cub/cub.cuh>
 
-const int gpudb::HLBVH::LEAF = 0xFFFFFFFF;
+
+
+gpudb::HLBVH::HLBVH() {
+    this->memorySize = 0;
+    this->numBVHLevels = 0;
+    this->numNodes = 0;
+    this->numReferences = 0;
+    this->aabbMax = nullptr;
+    this->aabbMin = nullptr;
+    this->links = nullptr;
+    this->memory = nullptr;
+    this->parents = nullptr;
+    this->references = nullptr;
+    this->ranges = nullptr;
+    builded = false;
+}
 
 bool gpudb::HLBVH::alloc(uint32_t size) {
     memorySize = 2 * size * (2 * sizeof(int) + sizeof(uint2) + 2 * sizeof(float4)) + 1 * size * ( sizeof(uint) );
@@ -28,7 +43,7 @@ void gpudb::HLBVH::free() {
     if (memory) {
         gpuAllocator::getInstance().free(memory);
     }
-
+    builded = false;
     memory = nullptr;
     links = nullptr;
     parents = nullptr;
@@ -294,9 +309,7 @@ void initQueue(WorkQueue &queue, uint32_t size) {
     cudaMemcpy(queue.range, &range, sizeof(uint2), cudaMemcpyHostToDevice);
 }
 
-#define getLeftBound(p) p.x
-#define getRightBound(p) p.y
-#define getRangeSize(p) (p.y - p.x)
+
 
 #define clzll(x) __clzll((x))
 #define clzllHost(x) ((x) == 0)? 64 : __builtin_clzll((x))
@@ -383,7 +396,7 @@ void split(gpudb::HLBVH hlbvh, gpudb::MortonCode *keys, uint queueSize, uint64_t
     if (isWorking) {
         hlbvh.ranges[node] = range;
         if (isLeaf) {
-            hlbvh.links[node] = gpudb::HLBVH::LEAF; // лист
+            hlbvh.links[node] = LEAF; // лист
         } else {
             uint left = hlbvh.numNodes + offset;
             hlbvh.links[node] = left;
@@ -409,7 +422,7 @@ bool buildTreeStructure(gpudb::HLBVH &hlbvh, uint nodeSize, gpudb::MortonCode *k
         work[1].nodeId = gpudb::GpuStackAllocator::getInstance().alloc<int>(size);
         work[1].range = gpudb::GpuStackAllocator::getInstance().alloc<uint2>(size);
         offset[hlbvh.numBVHLevels++] = 0;
-        uint* counter = gpudb::gpuAllocator::getInstance().alloc<uint>(400);
+        uint* counter = gpudb::GpuStackAllocator::getInstance().alloc<uint>(400);
         if (work[0].nodeId == nullptr || work[0].range == nullptr
             || work[1].nodeId == nullptr || work[1].range == nullptr
             || counter == nullptr)
@@ -475,7 +488,7 @@ void refitBoxesKernel(gpudb::HLBVH hlbvh, gpudb::AABB *aabb, uint2 range, bool i
 
     node += getLeftBound(range);
     int link = hlbvh.links[node];
-    if (link == gpudb::HLBVH::LEAF) {
+    if (link == LEAF) {
         uint2 nodeRange = hlbvh.ranges[node];
         float4 aabbMin;
         float4 aabbMax;
@@ -491,8 +504,9 @@ void refitBoxesKernel(gpudb::HLBVH hlbvh, gpudb::AABB *aabb, uint2 range, bool i
         hlbvh.aabbMax[node] = aabbMax;
     } else {
         float4 boxAaabbMin = hlbvh.aabbMin[link + 0];
-        float4 boxBaabbMin = hlbvh.aabbMin[link + 1];
         float4 boxAaabbMax = hlbvh.aabbMax[link + 0];
+
+        float4 boxBaabbMin = hlbvh.aabbMin[link + 1];
         float4 boxBaabbMax = hlbvh.aabbMax[link + 1];
 
         hlbvh.parents[link + 0] = node;
@@ -555,6 +569,7 @@ bool gpudb::HLBVH::build(AABB *aabb, uint32_t size) {
 
         StackAllocator::getInstance().popPosition();
         gpuStackAlloc.popPosition();
+        builded = true;
         return true;
     } while(0);
     gLogWrite(LOG_MESSAGE_TYPE::ERROR, "not enough memory");
@@ -591,7 +606,7 @@ void searchAABBkernel(gpudb::HLBVH hlbvh, float4 aabbMin, float4 aabbMax, uint s
         st.pop();
         float4 boxAmin = hlbvh.aabbMin[nodeId];
         float4 boxAmax = hlbvh.aabbMax[nodeId];
-        if (hlbvh.links[nodeId] == gpudb::HLBVH::LEAF) {
+        if (hlbvh.links[nodeId] == LEAF) {
             if (aabbMin.x == boxAmin.x
                 && aabbMin.y == boxAmin.y
                 && aabbMin.z == boxAmin.z

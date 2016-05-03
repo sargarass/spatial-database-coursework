@@ -153,7 +153,7 @@ float3 operator / (float c, float3 a)
 }
 
 static FUNC_PREFIX
-float3 Cross(float3 a, float3 b)
+float3 cross(float3 a, float3 b)
 {
     return make_float3(a.y * b.z - a.z * b.y,
                        a.z * b.x - a.x * b.z,
@@ -161,7 +161,7 @@ float3 Cross(float3 a, float3 b)
 }
 
 static FUNC_PREFIX
-float Dot(float3 a, float3 b)
+float dot(float3 a, float3 b)
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }

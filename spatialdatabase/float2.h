@@ -10,6 +10,11 @@ float2 make_float2(float x)
 }
 
 static FUNC_PREFIX
+float sqr(float x) {
+    return x * x;
+}
+
+static FUNC_PREFIX
 float2 & operator += (float2 & a, float2 b)
 {
     a.x += b.x;
@@ -63,6 +68,11 @@ static FUNC_PREFIX
 float len(float2 a)
 {
     return sqrt(a.x * a.x + a.y * a.y);
+}
+
+static FUNC_PREFIX
+float lenSqr(float2 a, float2 b) {
+    return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
 }
 
 

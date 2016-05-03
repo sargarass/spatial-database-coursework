@@ -30,12 +30,24 @@ bool TableDescription::setTemporalKey(std::string const keyName, TemporalType ke
 }
 
 bool TableDescription::addColumn(AttributeDescription col) {
-    auto res = columnDescription.insert(col);
-    return res.second;
+    auto it = std::find(columnDescription.begin(), columnDescription.end(), col);
+
+    if (it != columnDescription.end()) {
+        return false;
+    }
+
+    columnDescription.push_back(col);
+    return true;
 }
 
 bool TableDescription::delColumn(AttributeDescription col) {
-    return columnDescription.erase(col);
+    auto it = std::find(columnDescription.begin(), columnDescription.end(), col);
+
+    if (it == columnDescription.end()) {
+        return false;
+    }
+    columnDescription.erase(it);
+    return true;
 }
 
 bool TableDescription::operator<(TableDescription const &b) const {

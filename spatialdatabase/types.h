@@ -22,7 +22,7 @@ inline void UNUSED_PARAM_HANDLER(){}
 template <typename Head, typename ...Tail>
 inline void UNUSED_PARAM_HANDLER(Head car, Tail ...cdr) { ((void) car); UNUSED_PARAM_HANDLER(cdr...);}
 
-enum Type {
+enum class Type {
     STRING, //char 255
     INT, // int64_t
     REAL, // double
@@ -31,16 +31,18 @@ enum Type {
     UNKNOWN
 };
 
-enum SpatialType {
+enum class SpatialType {
     POLYGON,
     LINE,
-    POINT
+    POINT,
+    UNKNOWN
 };
 
-enum TemporalType {
+enum class TemporalType {
     TRANSACTION_TIME,
     VALID_TIME,
     BITEMPORAL_TIME,
+    UNKNOWN
 };
 
 std::string typeToString(Type t);

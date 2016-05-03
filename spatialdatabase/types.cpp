@@ -1,4 +1,5 @@
 #include "types.h"
+#include "temptable.h"
 
 std::string typeToString(Type t) {
     switch (t) {
@@ -10,6 +11,8 @@ std::string typeToString(Type t) {
             return "INT";
         case Type::REAL:
             return "REAL";
+        case Type::SET:
+            return "SET";
         default:
             return "UNKNOWN";
     }
@@ -18,6 +21,8 @@ std::string typeToString(Type t) {
 
 uint64_t typeSize(Type t) {
     switch (t) {
+        case Type::SET:
+            return sizeof(TempTable*);
         case Type::DATE_TYPE:
             return sizeof(Date);
         case Type::STRING:

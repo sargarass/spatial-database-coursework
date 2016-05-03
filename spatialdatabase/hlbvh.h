@@ -7,20 +7,24 @@
 #include "aabb.h"
 #include "gpustack.h"
 #include "timer.h"
+#define LEAF 0xFFFFFFFF
+#define getLeftBound(p) p.x
+#define getRightBound(p) p.y
+#define getRangeSize(p) (p.y - p.x)
 
 namespace gpudb {
     class HLBVH {
     public:
         bool build(AABB *aabb, uint32_t size);
         bool search(AABB aabb);
+        bool isBuilded() { return builded; }
+        HLBVH();
     public:
         bool alloc(uint32_t size);
         void free();
-        static const int LEAF;
         uint32_t numNodes;
         uint32_t numReferences;
         uint32_t numBVHLevels;
-
         float4 *aabbMin;
         float4 *aabbMax;
 
@@ -30,5 +34,6 @@ namespace gpudb {
         int *links;
         uint8_t *memory;
         uint64_t memorySize;
+        bool builded;
     };
 }
