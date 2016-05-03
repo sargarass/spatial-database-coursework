@@ -239,13 +239,7 @@ void knearestNeighbor(gpudb::HLBVH bvh, gpudb::GpuRow **search, gpudb::GpuRow **
     st.push(make_uint2(0, NOT_USED));
     st.push(make_uint2(1, NOT_USED));
 
-    int len = 0;
     while(!st.empty()) {
-        len++;
-        if (len >= 2000) {
-            break;
-        }
-
         uint2 posSt = st.top(); st.pop();
         uint pos = posSt.x;
         uint ref = posSt.y;
