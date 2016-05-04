@@ -46,4 +46,5 @@ enum class TemporalType {
 };
 
 std::string typeToString(Type t);
+FUNC_PREFIX
 uint64_t typeSize(Type t);

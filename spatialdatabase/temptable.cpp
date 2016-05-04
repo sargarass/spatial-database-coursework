@@ -1,31 +1,35 @@
 #include "temptable.h"
 #include "database.h"
-
+#include <stack>
 TempTable::~TempTable() {
-    if (this->table) {
-        bool set = false;
-        for (int i = 0; i < description.columnDescription.size(); i++) {
-            if (description.columnDescription[i].type == Type::SET) {
-                set = true;
-                break;
-            }
-        }
-        if (set == true) {
-            thrust::host_vector<gpudb::GpuRow*> rows = table->rows;
-            for (int i = 0; i < table->rows.size(); i++) {
-                uint8_t* memory = StackAllocator::getInstance().alloc<uint8_t>(table->rowsSize[i]);
-                gpudb::GpuRow* pointer = (gpudb::GpuRow*)memory;
-
-                DataBase::loadCPU(pointer, rows[i], table->rowsSize[i]);
-                for (int j = 0; j < pointer->valueSize; j++) {
-                    if (description.columnDescription[j].type == Type::SET) {
-                        delete (*((TempTable**)(pointer->value[j].value)));
-                    }
-                }
-            }
-        }
+    for (auto& v : needToBeFree) {
+        delete (void*) v;
     }
-    delete this->table;
+
+    // удалили ссылки вверх
+    for (TempTable * p: parents) {
+        auto it = std::find(p->references.begin(), p->references.end(), this);
+        p->references.erase(it);
+    }
+
+    std::stack<TempTable *> st;
+    for (TempTable *ref : references) {
+        st.push(ref);
+    }
+    // почистили ссылки вниз
+    while(!st.empty()) {
+        TempTable *t = st.top(); st.pop();
+        t->valid = false;
+        t->parents.clear();
+        for (TempTable* t : t->references) {
+            st.push(t);
+        }
+        t->references.clear();
+    }
+
+    if (table) {
+        delete this->table;
+    }
     this->table = nullptr;
     this->valid = false;
 }
@@ -46,14 +50,14 @@ SpatialType TempTable::getSpatialKeyType() const {
     if (this->table == nullptr) {
         return SpatialType::UNKNOWN;
     }
-    return this->table->spatialKey.type;
+    return this->description.spatialKeyType;
 }
 
 TemporalType TempTable::getTemporalType() const {
     if (this->table == nullptr) {
         return TemporalType::UNKNOWN;
     }
-    return this->table->temporalKey.type;
+    return this->description.temporalKeyType;
 }
 
 bool TempTable::isValid() const {

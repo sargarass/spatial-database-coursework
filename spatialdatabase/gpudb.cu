@@ -50,12 +50,18 @@ switch(spatialtype) { \
 
 gpudb::GpuTable::GpuTable() {
     this->name[0] = 0;
+    this->rowReferenses = false;
 }
 
 gpudb::GpuTable::~GpuTable() {
     gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "destructor");
-    for (GpuRow *row : rows) {
-        gpudb::gpuAllocator::getInstance().free(row);
+    if (!rowReferenses) {
+        for (GpuRow *row : rows) {
+            gpudb::gpuAllocator::getInstance().free(row);
+        }
+    }
+    if (bvh.isBuilded()) {
+        bvh.free();
     }
 }
 
@@ -160,10 +166,6 @@ bool gpudb::GpuTable::set(TableDescription table) {
 
     columns.reserve(vec.size());
     thrust::copy(vec.begin(), vec.end(), columns.begin());
-    std::memcpy(this->spatialKey.name, table.spatialKeyName.c_str(), table.spatialKeyName.length());
-    std::memcpy(this->temporalKey.name, table.temporalKeyName.c_str(), table.temporalKeyName.length());
-    this->spatialKey.type = table.spatialKeyType;
-    this->temporalKey.type = table.temporalKeyType;
     return true;
 
 }
@@ -261,7 +263,7 @@ void testIdenticalKeys(gpudb::GpuRow** rows, uint size, gpudb::GpuRow *nRow, int
     result[idx] = temporalEx && spatialEx;
 }
 
-bool gpudb::GpuTable::insertRow(gpudb::GpuRow* row, uint64_t memsize) {
+bool gpudb::GpuTable::insertRow(TableDescription &descriptor,gpudb::GpuRow* row, uint64_t memsize) {
     gpudb::GpuStackAllocator::getInstance().pushPosition();
     do {
         int cpuRes = 0;
@@ -278,7 +280,7 @@ bool gpudb::GpuTable::insertRow(gpudb::GpuRow* row, uint64_t memsize) {
             dim3 block(BLOCK_SIZE);
             dim3 grid = gridConfigure(rows.size(), block);
 
-            SWITCH_RUN(spatialKey.type, temporalKey.type, testIdenticalKeys, grid, block, thrust::raw_pointer_cast(rows.data()), rows.size(), row, result);
+            SWITCH_RUN(descriptor.spatialKeyType, descriptor.temporalKeyType, testIdenticalKeys, grid, block, thrust::raw_pointer_cast(rows.data()), rows.size(), row, result);
             cub::DeviceReduce::Sum(tmp, temp_size, result, resgpu, rows.size());
             cudaMemcpy(&cpuRes, resgpu, sizeof(int), cudaMemcpyDeviceToHost);
             gpudb::GpuStackAllocator::getInstance().free(result);

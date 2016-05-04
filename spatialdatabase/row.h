@@ -141,3 +141,28 @@ public:
 protected:
     std::vector<Attribute> values;
 };
+
+template<>
+bool Attribute::setValue(bool isNull, int64_t const val);
+template<>
+bool Attribute::setValue(bool isNull, int32_t const val);
+template<>
+bool Attribute::setValue(bool isNull, uint32_t const val);
+template<>
+bool Attribute::setValue(bool isNull, uint64_t const val);
+template<>
+bool Attribute::setValue(bool isNull, float const val);
+template<>
+bool Attribute::setValue(bool isNull, double const val);
+template<>
+bool Attribute::setValue(bool isNull, std::string const &val);
+template<>
+bool Attribute::setValue(bool isNull, std::string val);
+template<>
+bool Attribute::setValue(bool isNull, char *val);
+template<>
+bool Attribute::setValue(bool isNull, char const *val);
+template<>
+bool Attribute::setValue(bool isNull, Date const &date);
+template<>
+bool Attribute::setValue(bool isNull, Date const date);

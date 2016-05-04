@@ -27,6 +27,7 @@ bool gpudb::gpuAllocator::free(void *ptr) {
 void gpudb::gpuAllocator::freeAll() {
     gLogWrite(LOG_MESSAGE_TYPE::INFO, "freeing all memory");
     for (auto& ptr : memoryPtrs) {
+        gLogWrite(LOG_MESSAGE_TYPE::INFO, "%p", ptr);
         cudaFree((void*)ptr);
     }
     memoryPtrs.clear();

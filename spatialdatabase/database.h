@@ -5,6 +5,9 @@
 #include "tabledescription.h"
 #include "row.h"
 #include "temptable.h"
+#include "constobjects.h"
+
+typedef bool(*Predicate)(gpudb::CRow const &);
 
 class DataBase : public Singleton {
     typedef std::pair<std::string, TableDescription> tablesTypePair;
@@ -15,6 +18,10 @@ public:
     bool showTable(std::string tableName);
     bool showTable(gpudb::GpuTable const &table, const TableDescription &description, uint tabs =0);
     bool selectTable(std::string tableName, TempTable &table);
+
+    bool update(std::string tableName, std::set<Attribute> const &atrSet, Predicate p);
+    bool dropRow(std::string tableName, Predicate p);
+    bool dropTable(std::string tableName);
 
     static DataBase &getInstance() {
         static DataBase *db = new DataBase;
@@ -41,7 +48,7 @@ public:
         gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "delete DataBase");
         deinit();
     }
-private:
+public:
     static void storeGPU(gpudb::GpuRow *dst, gpudb::GpuRow *src, uint64_t memsize);
     static void loadCPU(gpudb::GpuRow *dstCPU, gpudb::GpuRow *srcGPU, uint64_t memsize);
     static bool copyTempTable(TableDescription const &description, gpudb::GpuTable const *gpuTable, TempTable &table);
@@ -55,29 +62,6 @@ private:
     friend bool pointxpointKnearestNeighbor(TempTable const &a, TempTable const &b, uint k, TempTable &result);
     friend class TempTable;
 };
-
-template<>
-bool Attribute::setValue(bool isNull, int64_t const val);
-template<>
-bool Attribute::setValue(bool isNull, int32_t const val);
-template<>
-bool Attribute::setValue(bool isNull, uint32_t const val);
-template<>
-bool Attribute::setValue(bool isNull, uint64_t const val);
-template<>
-bool Attribute::setValue(bool isNull, float const val);
-template<>
-bool Attribute::setValue(bool isNull, double const val);
-template<>
-bool Attribute::setValue(bool isNull, std::string const &val);
-template<>
-bool Attribute::setValue(bool isNull, std::string val);
-template<>
-bool Attribute::setValue(bool isNull, char *val);
-template<>
-bool Attribute::setValue(bool isNull, Date const &date);
-template<>
-bool Attribute::setValue(bool isNull, Date const date);
 
 template<typename T1, typename T2, typename T3> FUNC_PREFIX
 T1 *newAddress(T1 *old, T2 *oldMemory, T3 *newMemory) {

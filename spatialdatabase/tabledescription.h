@@ -24,7 +24,7 @@ public:
 class DataBase;
 
 class TableDescription {
-    friend bool pointxpointKnearestNeighbor(TempTable const &a, TempTable const &b, uint k, TempTable &result);
+    friend bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempTable &result);
     friend class DataBase;
     friend class gpudb::GpuTable;
     friend class TempTable;

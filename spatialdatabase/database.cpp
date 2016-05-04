@@ -2,98 +2,6 @@
 #include "gpuallocator.h"
 #include <stdarg.h>
 
-template<>
-bool Attribute::setValue(bool isNull, int64_t const val) {
-    this->type = Type::INT;
-    this->isNull = isNull;
-    return setValueImp(Type::INT, &val);
-}
-
-template<>
-bool Attribute::setValue(bool isNull, int32_t const val) {
-    this->type = Type::INT;
-    this->isNull = isNull;
-    return setValueImp(Type::INT, &val);
-}
-
-template<>
-bool Attribute::setValue(bool isNull, uint32_t const val) {
-    this->type = Type::INT;
-    this->isNull = isNull;
-    return setValueImp(Type::INT, &val);
-}
-
-template<>
-bool Attribute::setValue(bool isNull, uint64_t const val) {
-    this->type = Type::INT;
-    this->isNull = isNull;
-    return setValueImp(Type::INT, &val);
-}
-
-template<>
-bool Attribute::setValue(bool isNull, float const val) {
-    this->type = Type::REAL;
-    this->isNull = isNull;
-    return setValueImp(Type::REAL, &val);
-}
-
-template<>
-bool Attribute::setValue(bool isNull, double const val) {
-    this->type = Type::REAL;
-    this->isNull = isNull;
-    return setValueImp(Type::REAL, &val);
-}
-
-template<>
-bool Attribute::setValue(bool isNull, std::string const &val) {
-    this->type = Type::STRING;
-    this->isNull = isNull;
-    return setValueImp(Type::STRING, val.c_str());
-}
-
-template<>
-bool Attribute::setValue(bool isNull, std::string val) {
-    this->type = Type::STRING;
-    this->isNull = isNull;
-    return setValueImp(Type::STRING, val.c_str());
-}
-
-template<>
-bool Attribute::setValue(bool isNull, char *val) {
-    this->type = Type::STRING;
-    this->isNull = isNull;
-    return setValueImp(Type::STRING, val);
-}
-
-template<>
-bool Attribute::setValue(bool isNull, char const *val) {
-    this->type = Type::STRING;
-    this->isNull = isNull;
-    return setValueImp(Type::STRING, val);
-}
-
-template<>
-bool Attribute::setValue(bool isNull, Date const &date) {
-    if (date.isValid()) {
-        this->type = Type::DATE_TYPE;
-        this->isNull = isNull;
-        return setValueImp(Type::DATE_TYPE, &date);
-    }
-    return false;
-}
-
-template<>
-bool Attribute::setValue(bool isNull, Date const date) {
-    if (date.isValid()) {
-        this->type = Type::DATE_TYPE;
-        this->isNull = isNull;
-        return setValueImp(Type::DATE_TYPE, &date);
-    }
-    return false;
-}
-
-
-
 bool DataBase::createTable(TableDescription table) {
     if (table.name.length() > NAME_MAX_LEN) {
         gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Cannot create table with name = \"%s\" length %d: max %d length",
@@ -279,7 +187,7 @@ bool DataBase::insertRow(std::string tableName, Row row) {
     if (!row.temporalKey.isValid()) {
         gLogWrite(LOG_MESSAGE_TYPE::WARNING,
                                  "Cannot insert row:"
-                                 " temporalkey invalid");
+                                 " temporalkey invalid \"%s\" \"%s\"", row.temporalKey.validTimeS.toString().c_str(), row.temporalKey.validTimeE.toString().c_str());
         return false;
     }
     std::sort(row.values.begin(), row.values.end());
@@ -348,6 +256,9 @@ bool DataBase::insertRow(std::string tableName, Row row) {
         gpuRow->temporalPart.transactionTimeCode = row.temporalKey.transactionTime.codeDate();
     }
 
+    strncpy(gpuRow->temporalPart.name, description.temporalKeyName.c_str(), typeSize(Type::STRING));
+    strncpy(gpuRow->spatialPart.name, description.spatialKeyName.c_str(), typeSize(Type::STRING));
+
     uint8_t *gpuMemory = gpudb::gpuAllocator::getInstance().alloc<uint8_t>(memsize);
     uint8_t *memoryValue = memory + sizeof(gpudb::GpuRow) + sizeof(gpudb::Value) * gpuRow->valueSize;
     if (gpuMemory  == nullptr) {
@@ -399,7 +310,7 @@ bool DataBase::insertRow(std::string tableName, Row row) {
     storeGPU(reinterpret_cast<gpudb::GpuRow*>(gpuMemory), gpuRow, memsize);
     StackAllocator::getInstance().popPosition();
     gpudb::GpuTable *table = (*tables.find(tableName)).second;
-    if ( table->insertRow(reinterpret_cast<gpudb::GpuRow*>(gpuMemory), memsize) ) {
+    if ( table->insertRow(description, reinterpret_cast<gpudb::GpuRow*>(gpuMemory), memsize) ) {
         return true;
     }
 
@@ -507,7 +418,7 @@ bool DataBase::showTable(gpudb::GpuTable const &table, TableDescription const &d
                     case Type::SET:
                     {
                         myprintf(tabs, "\n");
-                        TempTable *ptr= *(TempTable**)cpu->value[i].value;
+                        TempTable *ptr= ((gpudb::GpuSet*)cpu->value[i].value)->temptable;
                         showTable(*ptr->table, ptr->description, tabs + 2);
                     }
                     break;
@@ -537,8 +448,9 @@ bool DataBase::showTable(std::string tableName) {
         gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Table \"%s\" is not exist", tableName.c_str());
         return false;
     }
-
+    printf("Table \"%s\" [{\n", it->second.name.c_str());
     gpudb::GpuTable const *gputable = (*it2).second;
-
-    return showTable(*gputable, it->second);
+    bool result = showTable(*gputable, it->second);
+    printf("}]\n");
+    return result;
 }

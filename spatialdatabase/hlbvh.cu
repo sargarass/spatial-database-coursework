@@ -628,36 +628,3 @@ void searchAABBkernel(gpudb::HLBVH hlbvh, float4 aabbMin, float4 aabbMax, uint s
     }
     *result = false;
 }
-/*
-bool gpudb::HLBVH::search(AABB *aabb, size) {
-    dim3 block = dim3(BLOCK_SIZE);
-    dim3 grid = gridConfigure(1, block);
-    float4 min, max;
-    min.x = aabb.x.x;
-    min.y = aabb.y.x;
-    min.z = aabb.z.x;
-    min.w = aabb.w.x;
-
-    max.x = aabb.x.y;
-    max.y = aabb.y.y;
-    max.z = aabb.z.y;
-    max.w = aabb.w.y;
-    gpudb::GpuStackAllocator::getInstance().pushPosition();
-    do {
-        bool *result = gpudb::GpuStackAllocator::getInstance().alloc<bool>();
-        int stackSize = 800;
-        int *stack = gpudb::GpuStackAllocator::getInstance().alloc<int>(stackSize);
-        if (result == nullptr || stack == nullptr) {
-            break;
-        }
-        searchAABBkernel<<<grid, block>>>(*this, min, max, 1, result, stack, stackSize);
-        bool cpuResult;
-        cudaMemcpy(&cpuResult, result, sizeof(bool), cudaMemcpyDeviceToHost);
-        gpudb::GpuStackAllocator::getInstance().popPosition();
-        return cpuResult;
-    } while(0);
-    gLogWrite(LOG_MESSAGE_TYPE::ERROR, "not enough memory");
-    gpudb::GpuStackAllocator::getInstance().popPosition();
-    return false;
-}
-*/

@@ -12,48 +12,19 @@
 #include "hlbvh.h"
 
 namespace gpudb {
-
-    struct GpuColumnSpatialKey {
-        char name[NAME_MAX_LEN];
-        SpatialType type;
-
-        GpuColumnSpatialKey() {}
-
-        GpuColumnSpatialKey(GpuColumnSpatialKey const  &atr) {
-            *this = atr;
-        }
-
-
-        void operator=(GpuColumnSpatialKey const &b) {
-            type = b.type;
-            memcpy(name, b.name, NAME_MAX_LEN);
-        }
-    };
-
-    struct GpuColumnTemoralKey {
-        char name[NAME_MAX_LEN];
-        TemporalType type;
-        GpuColumnTemoralKey(GpuColumnTemoralKey const &atr) {
-            *this = atr;
-        }
-
-        GpuColumnTemoralKey() {}
-
-        void operator=(GpuColumnTemoralKey const &b) {
-            type = b.type;
-            memcpy(name, b.name, NAME_MAX_LEN);
-        }
-    };
-
     struct GpuColumnAttribute {
         char name[NAME_MAX_LEN];
         Type type;
+
         FUNC_PREFIX
+
         GpuColumnAttribute() {}
         FUNC_PREFIX
+
         GpuColumnAttribute(GpuColumnAttribute const &atr) {
             *this = atr;
         }
+
         FUNC_PREFIX
         void operator=(GpuColumnAttribute const &b) {
             type = b.type;
@@ -81,6 +52,7 @@ namespace gpudb {
         }
     };
 
+
     struct  __align__(16) GpuPoint {
         float2 p;
         FUNC_PREFIX
@@ -90,6 +62,7 @@ namespace gpudb {
     };
 
     struct  __align__(16) SpatialKey {
+        char name[NAME_MAX_LEN];
         SpatialType type;
         void *key;
 
@@ -99,17 +72,18 @@ namespace gpudb {
             key = b.key;
         }
 
-        __device__ __host__
+        FUNC_PREFIX
         void boundingBox(AABB *box);
     };
 
     struct  __align__(16) TemporalKey {
+        char name[NAME_MAX_LEN];
         TemporalType type;
         uint64_t validTimeSCode;
         uint64_t validTimeECode;
         uint64_t transactionTimeCode;
 
-        __device__ __host__
+        FUNC_PREFIX
         void boundingBox(AABB *box);
     };
 
@@ -132,19 +106,26 @@ namespace gpudb {
         }
     };
 
+    struct __align__(16) GpuSet {
+        GpuRow **rows;
+        GpuColumnAttribute *columns;
+        uint rowsSize;
+        uint columnsSize;
+        TempTable *temptable;
+    };
+
     struct GpuTable {
         GpuTable();
         ~GpuTable();
         char name[NAME_MAX_LEN];
+        bool rowReferenses;
         HLBVH bvh;
-        GpuColumnSpatialKey spatialKey;
-        GpuColumnTemoralKey temporalKey;
         thrust::device_vector<GpuColumnAttribute> columns;
         thrust::device_vector<GpuRow*> rows;
         std::vector<uint64_t> rowsSize;
         bool set(TableDescription table);
         bool setName(std::string const &string);
-        bool insertRow(gpudb::GpuRow*  row, uint64_t memsize);
+        bool insertRow(TableDescription &descriptor, gpudb::GpuRow*  row, uint64_t memsize);
     };
 
 }
