@@ -45,6 +45,7 @@ namespace gpudb {
             return s;
         }
 
+        FUNC_PREFIX
         bool operator<(MortonCode const &m) const {
             if (high < m.high) {
                 return true;
@@ -64,7 +65,6 @@ namespace gpudb {
         float2 y; // y
         float2 z; // valid time
         float2 w; // transaction time
-        int numComp;
 
         __device__ __host__
         int64_t clamp(int64_t in, int64_t min, int64_t max) {
@@ -75,30 +75,23 @@ namespace gpudb {
 
         __device__ __host__
         MortonCode getMortonCode(AABB const &global) {
-            float4 centroid = make_float4(1.0f, 1.0f, 1.0f, 1.0f);
+            float4 centroid;
             MortonCode code;
-            switch (numComp) {
-                case 4:
-                    centroid.w = AABBmin(w) + 0.5 * (AABBmax(w) - AABBmin(w));
-                case 3:
-                    centroid.z = AABBmin(z) + 0.5 * (AABBmax(z) - AABBmin(z));
-                case 2:
-                    centroid.x = AABBmin(x) + 0.5 * (AABBmax(x) - AABBmin(x));
-                    centroid.y = AABBmin(y) + 0.5 * (AABBmax(y) - AABBmin(y));
 
-                    centroid.x -= AABBmin(global.x);
-                    centroid.y -= AABBmin(global.y);
-                    centroid.z -= AABBmin(global.z);
-                    centroid.w -= AABBmin(global.w);
+            centroid.w = AABBmin(w) + 0.5 * (AABBmax(w) - AABBmin(w));
+            centroid.z = AABBmin(z) + 0.5 * (AABBmax(z) - AABBmin(z));
+            centroid.x = AABBmin(x) + 0.5 * (AABBmax(x) - AABBmin(x));
+            centroid.y = AABBmin(y) + 0.5 * (AABBmax(y) - AABBmin(y));
 
-                    centroid.x /= (AABBmax(global.x) - AABBmin(global.x));
-                    centroid.y /= (AABBmax(global.y) - AABBmin(global.y));
-                    centroid.z /= (AABBmax(global.z) - AABBmin(global.z));
-                    centroid.w /= (AABBmax(global.w) - AABBmin(global.w));
-                break;
-                default:
-                    break;
-            }
+            centroid.x -= AABBmin(global.x);
+            centroid.y -= AABBmin(global.y);
+            centroid.z -= AABBmin(global.z);
+            centroid.w -= AABBmin(global.w);
+
+            centroid.x /= (AABBmax(global.x) - AABBmin(global.x));
+            centroid.y /= (AABBmax(global.y) - AABBmin(global.y));
+            centroid.z /= (AABBmax(global.z) - AABBmin(global.z));
+            centroid.w /= (AABBmax(global.w) - AABBmin(global.w));
 
             uint4 centroidInt;
             const double shift = (double)(UINT_MAX);

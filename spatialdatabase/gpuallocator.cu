@@ -17,7 +17,7 @@ bool gpudb::gpuAllocator::free(void *ptr) {
     }
 
     if (!memoryPtrs.erase(reinterpret_cast<uintptr_t>(ptr))) {
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING, "memory was not alloced");
+        gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "memory was not alloced");
         return false;
     }
     cudaFree(ptr);
@@ -25,9 +25,9 @@ bool gpudb::gpuAllocator::free(void *ptr) {
 }
 
 void gpudb::gpuAllocator::freeAll() {
-    gLogWrite(LOG_MESSAGE_TYPE::INFO, "freeing all memory");
+    gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "freeing all memory");
     for (auto& ptr : memoryPtrs) {
-        gLogWrite(LOG_MESSAGE_TYPE::INFO, "%p", ptr);
+        gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "%p", ptr);
         cudaFree((void*)ptr);
     }
     memoryPtrs.clear();

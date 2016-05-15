@@ -40,7 +40,7 @@
 #include "gpudb.h"
 class ConsoleWriter : public ILogSubscriber, public Singleton {
 public:
-    virtual ~ConsoleWriter(){ printf("delete ConsoleWriter();\n"); }
+    virtual ~ConsoleWriter(){}
     ConsoleWriter() {
         m_showDebug = true;
     }

@@ -22,6 +22,7 @@ bool testIfLeapYear(uint32_t year) {
     return false;
 }
 
+FUNC_PREFIX
 static void dateYearToDayInitFunc() {
 #ifndef __CUDA_ARCH__
     if (dateYearToDayInit == false) {
@@ -178,7 +179,9 @@ Date Date::getDateFromEpoch() {
 FUNC_PREFIX
 bool Date::setDate(int32_t year, uint64_t month, uint64_t day) {
     if (!isValidDate(year + 50000, month - 1, day - 1)) {
+#ifndef __CUDA_ARCH__
         gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "invalid date");
+#endif
         return false;
     }
 
@@ -245,7 +248,7 @@ Date Date::getRandomDate() {
 FUNC_PREFIX
 uint64_t Date::codeDate() {
     if (!isValid()) {
-        return 0xFFFFFFFFFFFFFFFFFFULL;
+        return 0xFFFFFFFFFFFFFFFFULL;
     }
     uint64_t res;
     dateToDays(year, month, day, res);

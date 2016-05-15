@@ -1,6 +1,7 @@
 #include "database.h"
 #include <cub/cub/cub.cuh>
 
+
 __device__
 void gpuRowGpuToGpu(gpudb::GpuRow * dst, gpudb::GpuRow const * src, uint64_t const memsize) {
     memcpy(dst, src, memsize);
@@ -87,7 +88,6 @@ bool DataBase::copyTempTable(TableDescription const &description, gpudb::GpuTabl
                                      hostRows.size());
     }
     while(0);
-    error:
     gpudb::GpuStackAllocator::getInstance().popPosition();
     StackAllocator::getInstance().popPosition();
 
@@ -134,7 +134,549 @@ void buildKeysAABB(gpudb::GpuRow** rows, gpudb::AABB *boxes, uint size) {
     }
 
     rows[idx]->spatialPart.boundingBox(&boxes[idx]);
-    rows[idx]->temporalPart.boundingBox(&boxes[idx]);
+    AABBmin(boxes[idx].z) = AABBmax(boxes[idx].z) = 0.0f;
+    AABBmin(boxes[idx].w) = AABBmax(boxes[idx].w) = 0.0f;
+    //rows[idx]->temporalPart.boundingBox(&boxes[idx]);
+}
+
+__device__
+AABBRelation boxIntersection2D(float4 aMin, float4 aMax, float4 bMin, float4 bMax) {
+    bool a1 = aMax.x < bMin.x;
+    bool a2 = aMin.x > bMax.x;
+
+    bool a3 = aMax.y < bMin.y;
+    bool a4 = aMin.y > bMax.y;
+
+   /* bool a5 = aMax.z < bMin.z;
+    bool a6 = aMin.z > bMax.z;
+
+    bool a7 = aMax.w < bMin.w;
+    bool a8 = aMin.w > bMax.w;*/
+
+    if (a1 || a2 || a3 || a4 /*&& a5 &&a6 && a7 && a8*/) {
+        return AABBRelation::DISJOINT;
+    }
+
+    if (aMin.x <= bMin.x && bMin.x <= aMax.x &&
+        aMin.x <= bMax.x && bMax.x <= aMax.x &&
+        aMin.y <= bMin.y && bMin.y <= aMax.y &&
+        aMin.y <= bMax.y && bMax.y <= aMax.y /*&&
+        aMin.z <= bMin.z && bMin.z <= aMax.z &&
+        aMin.z <= bMax.z && bMax.z <= aMax.z &&
+        aMin.w <= bMin.w && bMin.w <= aMax.w &&
+        aMin.w <= bMax.w && bMax.w <= aMax.w*/) {
+        return AABBRelation::BINSIDEA;
+    }
+
+    return AABBRelation::OVERLAP;
+}
+
+
+__device__
+void computeBoundingBoxLineBuffer(gpudb::GpuLine *line, float radius, float2 &min2, float2 &max2) {
+    min2 = make_float2(INFINITY, INFINITY);
+    max2 = make_float2(-INFINITY, -INFINITY);
+
+    float2 s = line->points[0];
+    float2 e = line->points[1]; // предпологаем что линия не из одной точки
+
+    float2 dir = e - s;
+    dir = norma(dir);
+    float2 n = make_float2(dir.y, -dir.x);
+    float2 resizedN = n * radius;
+    float2 resizedDir = dir * radius;
+
+    float2 p1 = s - resizedDir;
+
+    min2 = fmin(p1, min2);
+    max2 = fmax(p1, max2);
+
+    float2 p1_1 = p1 + resizedN;
+    float2 p1_2 = p1 - resizedN;
+
+    min2 = fmin(p1_1, min2);
+    min2 = fmin(p1_2, min2);
+    max2 = fmax(p1_1, max2);
+    max2 = fmax(p1_2, max2);
+
+    for (uint i = 0; i < line->size - 1; i++) {
+        s = line->points[i];
+        e = line->points[i + 1];
+        dir = e - s;
+        dir = norma(dir);
+        n = make_float2(dir.y, -dir.x);
+        resizedN = n * radius;
+        resizedDir = dir * radius;
+        p1 = e + resizedDir;
+        p1_1 = p1 + resizedN;
+        p1_2 = p1 - resizedN;
+        min2 = fmin(p1, min2);
+        max2 = fmax(p1, max2);
+        min2 = fmin(p1_1, min2);
+        min2 = fmin(p1_2, min2);
+        max2 = fmax(p1_1, max2);
+        max2 = fmax(p1_2, max2);
+    }
+}
+
+__device__
+void boxInsideBoxSubKernel(float4 aabbMin, float4 aabbMax, uint &numBoxBinside, gpudb::HLBVH &bvh, uint *stack, uint stackSize) {
+    GpuStack<uint> st(stack, stackSize);
+    st.push(0);
+    uint sum = 0;
+    while(!st.empty()) {
+        uint pos = st.top(); st.pop();
+        float4 aMax = bvh.aabbMax[pos];
+        float4 aMin = bvh.aabbMin[pos];
+        float4 bMax = bvh.aabbMax[pos + 1];
+        float4 bMin = bvh.aabbMin[pos + 1];
+        int link1 = bvh.links[pos];
+        int link2 = bvh.links[pos + 1];
+        AABBRelation r1 = boxIntersection2D(aabbMin, aabbMax, aMin, aMax);
+        AABBRelation r2 = boxIntersection2D(aabbMin, aabbMax, bMin, bMax);
+
+        if (r1 == AABBRelation::OVERLAP && link1 != LEAF) {
+            st.push(link1);
+        }
+
+        if (r2 == AABBRelation::OVERLAP && link2 != LEAF) {
+            st.push(link2);
+        }
+
+        if (r1 == AABBRelation::BINSIDEA || (r1 == AABBRelation::OVERLAP && link1 == LEAF)) {
+            sum += getRangeSize(bvh.ranges[pos]);
+        }
+
+        if (r2 == AABBRelation::BINSIDEA || (r2 == AABBRelation::OVERLAP && link2 == LEAF)) {
+            sum += getRangeSize(bvh.ranges[pos + 1]);
+        }
+    }
+    numBoxBinside = sum;
+}
+
+__device__
+void boxInsideBoxSubKernel(uint idx, float4 aabbMin, float4 aabbMax, uint numBoxBInside, uint offsets, uint *testedBoxANum, uint *testedBoxBNum, gpudb::HLBVH &bvh, uint *stack, uint stackSize) {
+    GpuStack<uint> st(stack, stackSize);
+    uint num = numBoxBInside;
+    uint pointCounter = 0;
+    st.push(0);
+    while(!st.empty() && pointCounter < num) {
+        uint pos = st.top(); st.pop();
+        float4 aMax = bvh.aabbMax[pos];
+        float4 aMin = bvh.aabbMin[pos];
+        float4 bMax = bvh.aabbMax[pos + 1];
+        float4 bMin = bvh.aabbMin[pos + 1];
+        int link1 = bvh.links[pos];
+        int link2 = bvh.links[pos + 1];
+        AABBRelation r1 = boxIntersection2D(aabbMin, aabbMax, aMin, aMax);
+        AABBRelation r2 = boxIntersection2D(aabbMin, aabbMax, bMin, bMax);
+
+        if (r1 == AABBRelation::OVERLAP && link1 != LEAF) {
+            st.push(link1);
+        }
+
+        if (r2 == AABBRelation::OVERLAP && link2 != LEAF) {
+            st.push(link2);
+        }
+
+        if ((r1 == AABBRelation::BINSIDEA) || (r1 == AABBRelation::OVERLAP && link1 == LEAF)) {
+            for (uint i = getLeftBound(bvh.ranges[pos]); i < getRightBound(bvh.ranges[pos]); i++) {
+                testedBoxBNum[offsets + pointCounter] = bvh.references[i];
+                testedBoxANum[offsets + pointCounter] = idx;
+                pointCounter++;
+            }
+        }
+
+        if ((r2 == AABBRelation::BINSIDEA) || (r2 == AABBRelation::OVERLAP && link2 == LEAF)) {
+            for (uint i = getLeftBound(bvh.ranges[pos + 1]); i < getRightBound(bvh.ranges[pos + 1]); i++) {
+                testedBoxBNum[offsets + pointCounter] = bvh.references[i];
+                testedBoxANum[offsets + pointCounter] = idx;
+                pointCounter++;
+            }
+        }
+    }
+}
+
+__global__
+void boxInsideBoxKernel(gpudb::GpuRow **rowsBoxA, uint *numBoxBinside, gpudb::HLBVH bvh, uint *stack, uint stackSize, uint workSize) {
+    uint idx = getGlobalIdx3DZXY();
+    if (idx >= workSize) {
+        return;
+    }
+    gpudb::AABB box;
+    rowsBoxA[idx]->spatialPart.boundingBox(&box);
+    rowsBoxA[idx]->temporalPart.boundingBox(&box);
+
+    float4 min = make_float4(box.x.x, box.y.x, box.z.x, box.w.x);
+    float4 max = make_float4(box.x.y, box.y.y, box.z.y, box.w.y);
+
+    boxInsideBoxSubKernel(min, max, numBoxBinside[idx], bvh, &stack[idx * stackSize], stackSize);
+}
+
+__global__
+void boxInsideBoxKernel2(gpudb::GpuRow **rowsBoxA, uint *numBoxBInside, uint *offsets, uint *testedBoxANum, uint *testedBoxBNum, gpudb::HLBVH bvh, uint *stack, uint stackSize, uint workSize) {
+    uint idx = getGlobalIdx3DZXY();
+    if (idx >= workSize) {
+        return;
+    }
+    gpudb::AABB box;
+    rowsBoxA[idx]->spatialPart.boundingBox(&box);
+    rowsBoxA[idx]->temporalPart.boundingBox(&box);
+
+    float4 min = make_float4(box.x.x, box.y.x, box.z.x, box.w.x);
+    float4 max = make_float4(box.x.y, box.y.y, box.z.y, box.w.y);
+
+    boxInsideBoxSubKernel(idx, min, max, numBoxBInside[idx], offsets[idx], testedBoxANum, testedBoxBNum, bvh, &stack[idx * stackSize], stackSize);
+}
+
+
+__global__
+void boxInsideBoxLineKernel(gpudb::GpuRow **rowsBoxA, uint *numBoxBinside, gpudb::HLBVH bvh, uint *stack, uint stackSize, uint workSize, float radius) {
+    uint idx = getGlobalIdx3DZXY();
+    if (idx >= workSize) {
+        return;
+    }
+    gpudb::AABB box;
+    gpudb::GpuLine *line = (gpudb::GpuLine *)rowsBoxA[idx]->spatialPart.key;
+    float2 min2, max2;
+
+    computeBoundingBoxLineBuffer(line, radius, min2, max2);
+    rowsBoxA[idx]->temporalPart.boundingBox(&box);
+
+    float4 min = make_float4(min2.x, min2.y, box.z.x, box.w.x);
+    float4 max = make_float4(max2.x, max2.y, box.z.y, box.w.y);
+
+    boxInsideBoxSubKernel(min, max, numBoxBinside[idx], bvh, &stack[idx * stackSize], stackSize);
+}
+
+__global__
+void boxInsideBoxLineKernel2(gpudb::GpuRow **rowsBoxA, uint *numBoxBInside, uint *offsets, uint *testedBoxANum, uint *testedBoxBNum, gpudb::HLBVH bvh, uint *stack, uint stackSize, uint workSize, float radius) {
+    uint idx = getGlobalIdx3DZXY();
+    if (idx >= workSize) {
+        return;
+    }
+    gpudb::AABB box;
+    gpudb::GpuLine *line = (gpudb::GpuLine *)rowsBoxA[idx]->spatialPart.key;
+    float2 min2, max2;
+
+    computeBoundingBoxLineBuffer(line, radius, min2, max2);
+    rowsBoxA[idx]->temporalPart.boundingBox(&box);
+
+    float4 min = make_float4(min2.x, min2.y, box.z.x, box.w.x);
+    float4 max = make_float4(max2.x, max2.y, box.z.y, box.w.y);
+
+    boxInsideBoxSubKernel(idx, min, max, numBoxBInside[idx], offsets[idx], testedBoxANum, testedBoxBNum, bvh, &stack[idx * stackSize], stackSize);
+}
+
+
+__device__
+float isLeft(float2 s, float2 e, float2 p) {
+    return (e.x - s.x) * (p.y - s.y) - (p.x - s.x) * (e.y - s.y);
+}
+
+__global__
+void pointInsidePolygonKernel(gpudb::GpuRow **polygons, uint *numPoints, uint *testedPolygonNum, uint *testedPointNum, uint *testResult, gpudb::GpuRow **points, uint sizeWork) {
+    uint idx = getGlobalIdx3DZXY();
+    if (idx >= sizeWork) {
+        return;
+    }
+
+    gpudb::GpuPolygon *polygon = (gpudb::GpuPolygon*)polygons[testedPolygonNum[idx]]->spatialPart.key;
+    gpudb::GpuPoint *point = (gpudb::GpuPoint*)points[testedPointNum[idx]]->spatialPart.key;
+    float2 p = point->p;
+    int wn = 0;
+    for (uint i = 0; i < polygon->size; i++) {
+        float2 s = polygon->points[i];
+        float2 e = polygon->points[((i + 1) < polygon->size)? i + 1 : 0];
+
+        float left = isLeft(s, e, p);
+        if (s.y <= p.y && e.y > p.y && left > 0) {
+            wn++;
+        } else {
+            if (s.y > p.y && e.y < p.y && left < 0) {
+                wn--;
+            }
+        }
+    }
+    testResult[idx] = wn != 0;
+    if (wn != 0) {
+        printf("{%f %f}\n", p.x, p.y);
+    }
+    if (wn == 0) {
+        atomicSub(&numPoints[testedPolygonNum[idx]], 1);
+    }
+}
+
+__device__
+bool insideRect(float2 A, float2 B, float2 C, float2 D, float2 point) {
+    float2 dir = B - A;
+    float2 dirToP = point - A;
+    float dot1 = dot(dir, dirToP);
+
+    float2 dir2 = C - B;
+    float2 dirToP2 = point - B;
+    float dot2 = dot(dir2, dirToP2);
+
+    float2 dir3 = D - C;
+    float2 dirToP3 = point - C;
+    float dot3 = dot(dir3, dirToP3);
+
+    float2 dir4 = A - D;
+    float2 dirToP4 = point - D;
+    float dot4 = dot(dir4, dirToP4);
+
+    return ((dot1 > 0) && (dot2 > 0) && (dot3 > 0) && (dot4 > 0)) ||
+           ((dot1 < 0) && (dot2 < 0) && (dot3 < 0) && (dot4 < 0));
+}
+
+__global__
+void pointInsideLineBufferKernel(gpudb::GpuRow **lines, uint *numPoints, uint *testedLineNum, uint *testedPointNum, uint *testResult, gpudb::GpuRow **points, uint sizeWork, float radius) {
+    uint idx = getGlobalIdx3DZXY();
+    if (idx >= sizeWork) {
+        return;
+    }
+
+    gpudb::GpuLine *line = (gpudb::GpuLine *)lines[testedLineNum[idx]]->spatialPart.key;
+    gpudb::GpuPoint *point = (gpudb::GpuPoint *)points[testedPointNum[idx]]->spatialPart.key;
+    float2 p = point->p;
+    float2 s = line->points[0];
+    float2 e;
+
+    bool result = (lenSqr(s, p) < radius * radius);
+    for (uint i = 0; i < line->size - 1; i++) {
+        s = line->points[i];
+        e = line->points[i + 1];
+        result = result || (lenSqr(e, p) < radius * radius);
+
+        float2 dir = e - s;
+        dir = norma(dir);
+        float2 n = make_float2(dir.y, -dir.x);
+
+        float2 A, B, C, D;
+        float2 resizedN = n * radius;
+        A = resizedN + s;
+        B = resizedN + e;
+        C = e - resizedN;
+        D = s - resizedN;
+        // это даёт ориентацию либо по часовой, либо против часовой стрелки
+        result = result || insideRect(A, B, C, D, p);
+        if (result) { break; }
+    }
+
+    if (result) {
+        printf("%d %f %f\n", testedPointNum[idx], p.x, p.y);
+    }
+
+    testResult[idx] = result;
+
+    if (result == false) {
+        atomicSub(&numPoints[testedLineNum[idx]], 1);
+    }
+}
+
+TempTable DataBase::linexpointPointsInBufferLine(TempTable const &a, TempTable &b, float radius) {
+    TempTable resultTempTable;
+
+    if (!a.isValid() || !b.isValid()) {
+        return resultTempTable;
+    }
+
+    if (a.table == nullptr ||
+        b.table == nullptr ||
+        a.getSpatialKeyType() != SpatialType::LINE ||
+        b.getSpatialKeyType() != SpatialType::POINT ||
+        radius <= 0.0001f) {
+        return resultTempTable;
+    }
+
+    gpudb::GpuStackAllocator::getInstance().pushPosition();
+    StackAllocator::getInstance().pushPosition();
+
+    do {
+        if (!b.table->bvh.isBuilded()) {
+
+            gpudb::AABB * boxes = gpudb::GpuStackAllocator::getInstance().alloc<gpudb::AABB> (b.table->rows.size());
+            if (boxes == nullptr) {
+                break;
+            }
+
+            dim3 block(BLOCK_SIZE);
+            dim3 grid(gridConfigure(b.table->rows.size(), block));
+            buildKeysAABB<<<grid, block>>>(thrust::raw_pointer_cast(b.table->rows.data()), boxes, b.table->rows.size());
+            if (b.table->bvh.build(boxes, b.table->rows.size()) == false) {
+                break;
+            }
+            gpudb::GpuStackAllocator::getInstance().free(boxes);
+        }
+
+        uint stackSize = b.table->bvh.numBVHLevels * 2 + 1;
+        uint *stack = gpudb::GpuStackAllocator::getInstance().alloc<uint>(stackSize * a.table->rows.size());
+        uint *pointsInsideLineBuffer = gpudb::GpuStackAllocator::getInstance().alloc<uint>(a.table->rows.size() + 1);
+        uint *prefixSumPointsInsideLineBuffer = gpudb::GpuStackAllocator::getInstance().alloc<uint>(a.table->rows.size() + 1);
+        uint8_t *cub_tmp_mem = nullptr;
+        uint64_t cub_tmp_memsize = 0;
+        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, pointsInsideLineBuffer, prefixSumPointsInsideLineBuffer, a.table->rows.size() + 1);
+        cub_tmp_mem = gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(cub_tmp_memsize);
+
+        uint *cpuPointsInsidePolygon = StackAllocator::getInstance().alloc<uint>(a.table->rows.size());
+
+        if (pointsInsideLineBuffer == nullptr || stack == nullptr || cpuPointsInsidePolygon == nullptr || cub_tmp_mem == nullptr || prefixSumPointsInsideLineBuffer == nullptr) {
+            break;
+        }
+
+        dim3 block(BLOCK_SIZE);
+        dim3 grid(gridConfigure(a.table->rows.size(), block));
+        boxInsideBoxLineKernel<<<grid, block>>>(thrust::raw_pointer_cast(a.table->rows.data()),
+                                                        pointsInsideLineBuffer,
+                                                        b.table->bvh,
+                                                        stack,
+                                                        stackSize,
+                                                        a.table->rows.size(),
+                                                        radius);
+
+        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, pointsInsideLineBuffer, prefixSumPointsInsideLineBuffer, a.table->rows.size() + 1);
+        uint allsize = 0;
+        cudaMemcpy(&allsize, prefixSumPointsInsideLineBuffer + a.table->rows.size(), sizeof(uint), cudaMemcpyDeviceToHost);
+
+        uint *testedLineNum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+        uint *testedResult = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+        uint *testedPointNum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+
+        if (testedLineNum == nullptr || testedResult == nullptr || testedPointNum == nullptr) {
+            break;
+        }
+
+        boxInsideBoxLineKernel2<<<grid, block>>>(thrust::raw_pointer_cast(a.table->rows.data()),
+                                                        pointsInsideLineBuffer,
+                                                        prefixSumPointsInsideLineBuffer,
+                                                        testedLineNum,
+                                                        testedPointNum,
+                                                        b.table->bvh,
+                                                        stack,
+                                                        stackSize,
+                                                        a.table->rows.size(),
+                                                        radius);
+        grid = gridConfigure(allsize, block);
+        pointInsideLineBufferKernel<<<grid, block>>>(thrust::raw_pointer_cast(a.table->rows.data()),
+                                                   pointsInsideLineBuffer,
+                                                   testedLineNum,
+                                                   testedPointNum,
+                                                   testedResult,
+                                                   thrust::raw_pointer_cast(b.table->rows.data()),
+                                                   allsize, radius);
+
+        uint *cputestedLineNum = StackAllocator::getInstance().alloc<uint>(allsize);
+        uint *cputestedResult = StackAllocator::getInstance().alloc<uint>(allsize);
+        uint *cputestedPointNum = StackAllocator::getInstance().alloc<uint>(allsize);
+        cudaMemcpy(cputestedLineNum, testedLineNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
+        cudaMemcpy(cputestedResult, testedResult, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
+        cudaMemcpy(cputestedPointNum, testedPointNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
+
+        for (uint i = 0; i < allsize; i++) {
+            printf("{ point : %d result : %d line : %d} \n", cputestedPointNum[i], cputestedResult[i], cputestedLineNum[i]);
+        }
+    } while(0);
+    return resultTempTable;
+}
+
+TempTable DataBase::polygonxpointPointsInPolygon(TempTable const &a, TempTable &b) {
+    TempTable resultTempTable;
+
+    if (!a.isValid() || !b.isValid()) {
+        return resultTempTable;
+    }
+    if (a.table == nullptr ||
+        b.table == nullptr ||
+        a.getSpatialKeyType() != SpatialType::POLYGON ||
+        b.getSpatialKeyType() != SpatialType::POINT) {
+        return resultTempTable;
+    }
+
+    gpudb::GpuStackAllocator::getInstance().pushPosition();
+    StackAllocator::getInstance().pushPosition();
+
+    do {
+        if (!b.table->bvh.isBuilded()) {
+
+            gpudb::AABB * boxes = gpudb::GpuStackAllocator::getInstance().alloc<gpudb::AABB> (b.table->rows.size());
+            if (boxes == nullptr) {
+                break;
+            }
+
+            dim3 block(BLOCK_SIZE);
+            dim3 grid(gridConfigure(b.table->rows.size(), block));
+            buildKeysAABB<<<grid, block>>>(thrust::raw_pointer_cast(b.table->rows.data()), boxes, b.table->rows.size());
+            if (b.table->bvh.build(boxes, b.table->rows.size()) == false) {
+                break;
+            }
+            gpudb::GpuStackAllocator::getInstance().free(boxes);
+        }
+
+        uint stackSize = b.table->bvh.numBVHLevels * 2 + 1;
+        uint *stack = gpudb::GpuStackAllocator::getInstance().alloc<uint>(stackSize * a.table->rows.size());
+        uint *pointsInsidePolygon = gpudb::GpuStackAllocator::getInstance().alloc<uint>(a.table->rows.size() + 1);
+        uint *prefixSumPointsInsidePolygon = gpudb::GpuStackAllocator::getInstance().alloc<uint>(a.table->rows.size() + 1);
+        uint8_t *cub_tmp_mem =nullptr;
+        uint64_t cub_tmp_memsize = 0;
+        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, pointsInsidePolygon, prefixSumPointsInsidePolygon, a.table->rows.size() + 1);
+        cub_tmp_mem = gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(cub_tmp_memsize);
+        uint *cpuPointsInsidePolygon = StackAllocator::getInstance().alloc<uint>(a.table->rows.size());
+
+        if (pointsInsidePolygon == nullptr || stack == nullptr || cpuPointsInsidePolygon == nullptr || cub_tmp_mem == nullptr || prefixSumPointsInsidePolygon == nullptr) {
+            break;
+        }
+
+        dim3 block(BLOCK_SIZE);
+        dim3 grid(gridConfigure(a.table->rows.size(), block));
+        boxInsideBoxKernel<<<grid, block>>>(thrust::raw_pointer_cast(a.table->rows.data()),
+                                                        pointsInsidePolygon,
+                                                        b.table->bvh,
+                                                        stack,
+                                                        stackSize,
+                                                        a.table->rows.size());
+
+        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, pointsInsidePolygon, prefixSumPointsInsidePolygon, a.table->rows.size() + 1);
+        uint allsize = 0;
+        cudaMemcpy(&allsize, prefixSumPointsInsidePolygon + a.table->rows.size(), sizeof(uint), cudaMemcpyDeviceToHost);
+        // номер точки /результат тестирвования/номер полигона
+        uint *testedPolygonNum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+        uint *testedResult = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+        uint *testedPointNum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+
+        if (testedPolygonNum == nullptr || testedResult == nullptr || testedPointNum == nullptr) {
+            break;
+        }
+
+        boxInsideBoxKernel2<<<grid, block>>>(thrust::raw_pointer_cast(a.table->rows.data()),
+                                                        pointsInsidePolygon,
+                                                        prefixSumPointsInsidePolygon,
+                                                        testedPolygonNum,
+                                                        testedPointNum,
+                                                        b.table->bvh,
+                                                        stack,
+                                                        stackSize,
+                                                        a.table->rows.size());
+        grid = gridConfigure(allsize, block);
+        pointInsidePolygonKernel<<<grid, block>>>(thrust::raw_pointer_cast(a.table->rows.data()),
+                                                   pointsInsidePolygon,
+                                                   testedPolygonNum,
+                                                   testedPointNum,
+                                                   testedResult,
+                                                   thrust::raw_pointer_cast(b.table->rows.data()),
+                                                   allsize);
+
+        uint *cputestedPolygonNum = StackAllocator::getInstance().alloc<uint>(allsize);
+        uint *cputestedResult = StackAllocator::getInstance().alloc<uint>(allsize);
+        uint *cputestedPointNum = StackAllocator::getInstance().alloc<uint>(allsize);
+        cudaMemcpy(cputestedPolygonNum, testedPolygonNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
+        cudaMemcpy(cputestedResult, testedResult, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
+        cudaMemcpy(cputestedPointNum, testedPointNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
+        for (uint i = 0; i < allsize; i++) {
+            printf("{ point : %d result : %d polygon : %d} \n", cputestedPointNum[i], cputestedResult[i], cputestedPolygonNum[i]);
+        }
+
+    } while(0);
+    return resultTempTable;
 }
 
 __device__
@@ -173,7 +715,12 @@ static  float minmaxdist(float2 p, float4 s, float4 t) {
 
 #define NOT_USED 0xFFFFFFFF
 
-__device__ void visitOrder(uint pos, gpudb::HLBVH &bvh, float2 point, Heap<float, uint, uint> &heap, GpuStack<uint2> &st) {
+__device__ void visitOrder(uint pos,
+                           gpudb::HLBVH &bvh,
+                           float2 point,
+                           Heap<float, uint, uint> &heap,
+                           GpuStack<uint2> &st)
+{
     float4 bmin1 = bvh.aabbMin[pos];
     float4 bmax1 = bvh.aabbMax[pos];
     float4 bmin2 = bvh.aabbMin[pos + 1];
@@ -215,7 +762,17 @@ __device__ void visitOrder(uint pos, gpudb::HLBVH &bvh, float2 point, Heap<float
 }
 
 __global__
-void knearestNeighbor(gpudb::HLBVH bvh, gpudb::GpuRow **search, gpudb::GpuRow **data, float *heapKeys, uint *heapValues, uint **heapIndexes, uint2 *stack, uint stackSize, uint k, uint workSize) {
+void knearestNeighbor(gpudb::HLBVH bvh,
+                      gpudb::GpuRow **search,
+                      gpudb::GpuRow **data,
+                      float *heapKeys,
+                      uint *heapValues,
+                      uint **heapIndexes,
+                      uint2 *stack,
+                      uint stackSize,
+                      uint k,
+                      uint workSize)
+{
     uint idx = getGlobalIdx3DZXY();
     if (idx >= workSize) {
         return;
@@ -236,9 +793,7 @@ void knearestNeighbor(gpudb::HLBVH bvh, gpudb::GpuRow **search, gpudb::GpuRow **
         heap.indexes[i] = nullptr;
     }
 
-    st.push(make_uint2(0, NOT_USED));
-    st.push(make_uint2(1, NOT_USED));
-
+    visitOrder(0, bvh, point, heap, st);
     while(!st.empty()) {
         uint2 posSt = st.top(); st.pop();
         uint pos = posSt.x;
@@ -284,29 +839,29 @@ void knearestNeighbor(gpudb::HLBVH bvh, gpudb::GpuRow **search, gpudb::GpuRow **
     }
 }
 
-bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempTable &resultTempTable) {
+TempTable DataBase::pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k) {
+    TempTable resultTempTable;
+
     if (!a.isValid() || !b.isValid()) {
-        return false;
+
+        return resultTempTable;
     }
 
     if (a.table == nullptr ||
         b.table == nullptr ||
         a.getSpatialKeyType() != SpatialType::POINT ||
         b.getSpatialKeyType() != SpatialType::POINT) {
-        return false;
-    }
-
-    if (a.getSpatialKeyType() != b.getSpatialKeyType()) {
-        return false;
+        std::cout << typeToString(a.getSpatialKeyType()) << " " << typeToString(b.getSpatialKeyType()) << std::endl;
+        return resultTempTable;
     }
 
     if (k == 0) {
-        return false;
+        return resultTempTable;
     }
 
     if (k > b.table->rows.size()) {
         gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "k = %d is more than %d", k, b.table->rowsSize.size());
-        return false;
+        return resultTempTable;
     }
 
     gpudb::GpuStackAllocator::getInstance().pushPosition();
@@ -365,7 +920,7 @@ bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempT
             break;
         }
 
-        for (int i = 0; i < a.table->rows.size(); i++) {
+        for (uint i = 0; i < a.table->rows.size(); i++) {
             tables[i] = new gpudb::GpuTable;
             newTempTables[i] = new TempTable;
 
@@ -410,7 +965,7 @@ bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempT
             tables[i]->rows = rows;
         }
 
-        for (int i = 0; i < a.table->rows.size(); i++) {
+        for (uint i = 0; i < a.table->rows.size(); i++) {
             newTempTables[i]->description = b.description;
             newTempTables[i]->valid = true;
             newTempTables[i]->table = tables[i];
@@ -434,7 +989,7 @@ bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempT
         thrust::host_vector<gpudb::GpuRow*> hostRowsResult;
         hostRowsResult.resize(a.table->rows.size());
 
-        for (int i = 0; i < a.table->rows.size(); i++) {
+        for (uint i = 0; i < a.table->rows.size(); i++) {
             uint64_t memsize = a.table->rowsSize[i] + sizeof(gpudb::Value) + typeSize(Type::SET);
             resultTable->rowsSize[i] = memsize;
             resultRows[i] = gpudb::gpuAllocator::getInstance().alloc<uint8_t>(memsize);
@@ -450,14 +1005,16 @@ bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempT
         resultTable->rows = hostRowsResult;
 
         thrust::host_vector<gpudb::GpuRow*> hostRows = a.table->rows;
-        for (int i = 0; i < a.table->rows.size(); i++) {
+        for (uint i = 0; i < a.table->rows.size(); i++) {
             uint8_t *aRow = StackAllocator::getInstance().alloc<uint8_t>(a.table->rowsSize[i]);
             DataBase::getInstance().loadCPU((gpudb::GpuRow*)aRow, hostRows[i], a.table->rowsSize[i]);
             gpudb::GpuRow* cpuRowPointer = ((gpudb::GpuRow*)cpuRows[i]);
             gpudb::GpuRow* aCpuRowPointer = ((gpudb::GpuRow*)aRow);
             uintptr_t cpuRawPointer = (uintptr_t)cpuRows[i];
             strncpy(cpuRowPointer->spatialPart.name, aCpuRowPointer->spatialPart.name, typeSize(Type::STRING));
+            cpuRowPointer->spatialPart.name[typeSize(Type::STRING) - 1] = 0;
             strncpy(cpuRowPointer->temporalPart.name, aCpuRowPointer->temporalPart.name, typeSize(Type::STRING));
+            cpuRowPointer->temporalPart.name[typeSize(Type::STRING) - 1] = 0;
 
             cpuRowPointer->spatialPart.type = aCpuRowPointer->spatialPart.type;
             cpuRowPointer->temporalPart.type = a.description.temporalKeyType;
@@ -465,7 +1022,7 @@ bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempT
             cpuRowPointer->value = (gpudb::Value*)(cpuRawPointer + sizeof(gpudb::GpuRow));
 
             uintptr_t memoryValues = cpuRawPointer + sizeof(gpudb::GpuRow) + sizeof(gpudb::Value) * cpuRowPointer->valueSize;
-            for (int j = 0; j < tdescription.columnDescription.size(); j++) {
+            for (uint j = 0; j < tdescription.columnDescription.size(); j++) {
                 cpuRowPointer->value[j].value = (void*)memoryValues;
                 if (j < a.description.columnDescription.size()) {
                     cpuRowPointer->value[j].isNull = aCpuRowPointer->value[j].isNull;
@@ -500,7 +1057,6 @@ bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempT
             DataBase::getInstance().storeGPU((gpudb::GpuRow*)resultRows[i], cpuRowPointer, resultTable->rowsSize[i]);
             StackAllocator::getInstance().free(aRow);
         }
-
         b.references.push_back(&resultTempTable);
         resultTempTable.parents.push_back(&b);
 
@@ -511,296 +1067,12 @@ bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempT
         gpudb::GpuStackAllocator::getInstance().popPosition();
         StackAllocator::getInstance().popPosition();
 
-        return true;
+        return resultTempTable;
     } while(0);
 
     error:
     gpudb::GpuStackAllocator::getInstance().popPosition();
     StackAllocator::getInstance().popPosition();
 
-    return false;
-}
-
-////////////////////////////////////////////
-
-__device__
-int mystrncmp(const char *__s1, const char *__s2, size_t __n) {
-    while (__n > 0 && ((*__s1) - (*__s2)) == 0 && (*__s1) && (*__s2)) {
-        --__n;
-        ++__s1;
-        ++__s2;
-    }
-
-    if (__n == 0) {
-        return 0;
-    }
-    return *__s1 - *__s2;
-}
-
-__global__
-void updaterKernel(gpudb::GpuColumnAttribute *columns, gpudb::GpuRow **rows, gpudb::Value *atrValues, char **atrNames, uint atrSize, Predicate p, uint workSize) {
-    uint idx = getGlobalIdx3DZXY();
-    if (idx >= workSize) {
-        return;
-    }
-    gpudb::CRow crow(rows[idx], columns, rows[idx]->valueSize);
-    if (p(crow)) {
-        int j = 0;
-        for (int i = 0; i < rows[idx]->valueSize; i++) {
-            if (mystrncmp(columns[i].name, atrNames[j], typeSize(Type::STRING)) == 0) {
-                rows[idx]->value[i].isNull = atrValues[j].isNull;
-                memcpy(rows[idx]->value[i].value, atrValues[j].value, typeSize(columns[i].type));
-
-                j++;
-                if (j == atrSize) {
-                    break;
-                }
-            }
-        }
-    }
-}
-
-
-__global__
-void testRowsOnPredicate(gpudb::GpuRow **rows, gpudb::GpuColumnAttribute *columns, uint columnsSize, uint64_t *result, uint64_t *resultInverse, Predicate p, uint size) {
-    uint idx = getGlobalIdx3DZXY();
-    if (idx >= size) {
-        return;
-    }
-
-    gpudb::CRow crow(rows[idx], columns, columnsSize);
-    if (p(crow)) {
-        result[idx] = 1;
-        resultInverse[idx] = 0;
-    } else {
-        result[idx] = 0;
-        resultInverse[idx] = 1;
-    }
-}
-
-__global__
-void distributor(gpudb::GpuRow **rows, uint64_t *decision, uint64_t *offset, gpudb::GpuRow **result, uint64_t *toDeleteOffeset, gpudb::GpuRow **toDelete, uint size) {
-    uint idx = getGlobalIdx3DZXY();
-    if (idx >= size) {
-        return;
-    }
-
-    if (decision[idx]) {
-        result[offset[idx]] = rows[idx];
-    } else {
-        toDelete[toDeleteOffeset[idx]] = rows[idx];
-    }
-}
-
-bool DataBase::dropRow(std::string tableName, Predicate p) {
-    auto tableIt = this->tables.find(tableName);
-    auto tableDesc = this->tablesType.find(tableName);
-    if (tableIt == tables.end() || tableDesc == tablesType.end()) {
-        return false;
-    }
-
-    TableDescription &desc = (*tableDesc).second;
-    gpudb::GpuTable *table = (*tableIt).second;
-    if (table->rows.size() == 0) {
-        return false;
-    }
-
-    dim3 block(BLOCK_SIZE);
-    dim3 grid = gridConfigure(table->rows.size(), block);
-    gpudb::GpuStackAllocator::getInstance().pushPosition();
-    StackAllocator::getInstance().pushPosition();
-    do {
-        uint64_t *result = gpudb::GpuStackAllocator::getInstance().alloc<uint64_t>(table->rows.size() + 1);
-        uint64_t *prefixSum = gpudb::GpuStackAllocator::getInstance().alloc<uint64_t>(table->rows.size() + 1);
-        uint64_t *resultInverse = gpudb::GpuStackAllocator::getInstance().alloc<uint64_t>(table->rows.size() + 1);
-        uint64_t *prefixSumInverse = gpudb::GpuStackAllocator::getInstance().alloc<uint64_t>(table->rows.size() + 1);
-
-        uint64_t *cpuPrefixSum = StackAllocator::getInstance().alloc<uint64_t>(table->rows.size() + 1);
-        uint64_t *cpuPrefixSumInverse = StackAllocator::getInstance().alloc<uint64_t>(table->rows.size() + 1);
-        size_t cub_tmp_memsize = 0;
-        uint8_t *cub_tmp_mem = nullptr;
-        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, result, prefixSum, table->rows.size() + 1);
-        cub_tmp_mem = gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(cub_tmp_memsize);
-
-        if (prefixSum == nullptr || result == nullptr || cub_tmp_mem == nullptr ||
-            cpuPrefixSum == nullptr || cpuPrefixSumInverse == nullptr || prefixSumInverse == nullptr || resultInverse == nullptr) {
-            return false;
-        }
-
-        testRowsOnPredicate<<<grid, block>>>(thrust::raw_pointer_cast(table->rows.data()),
-                                             thrust::raw_pointer_cast(table->columns.data()),
-                                             table->columns.size(),
-                                             result,
-                                             resultInverse,
-                                             p,
-                                             table->rows.size());
-
-        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, result, prefixSum, table->rows.size() + 1);
-        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, resultInverse, prefixSumInverse, table->rows.size() + 1);
-
-        cudaMemcpy(cpuPrefixSum, prefixSum, sizeof(uint64_t) * (table->rows.size() + 1), cudaMemcpyDeviceToHost);
-        cudaMemcpy(cpuPrefixSumInverse, prefixSumInverse, sizeof(uint64_t) * (table->rows.size() + 1), cudaMemcpyDeviceToHost);
-
-        uint64_t toSaveSize = cpuPrefixSumInverse[table->rows.size()];
-        uint64_t toDeleteSize = cpuPrefixSum[table->rows.size()];
-
-        if (toDeleteSize == 0) {
-            break;
-        }
-
-        gpudb::GpuRow **toDelete = gpudb::GpuStackAllocator::getInstance().alloc<gpudb::GpuRow *>(toDeleteSize);
-        gpudb::GpuRow **toDeleteCpu = StackAllocator::getInstance().alloc<gpudb::GpuRow *>(toDeleteSize);
-
-        if (toDelete == nullptr || toDeleteCpu == nullptr) {
-            break;
-        }
-
-        thrust::device_vector<gpudb::GpuRow *> resultRows;
-        std::vector<uint64_t> sizes;
-        if (toSaveSize > 0) {
-            resultRows.resize(toSaveSize);
-            sizes.resize(toSaveSize);
-        }
-
-        distributor<<<grid, block>>>(thrust::raw_pointer_cast(table->rows.data()),
-                                resultInverse,
-                                prefixSumInverse,
-                                thrust::raw_pointer_cast(resultRows.data()),
-                                prefixSum,
-                                toDelete,
-                                table->rows.size());
-
-
-        if (toSaveSize > 0) {
-            for (int i = 0; i < table->rowsSize.size(); i++) {
-                sizes[cpuPrefixSumInverse[i]] = table->rowsSize[i];
-            }
-        }
-
-        swap(table->rows, resultRows);
-        swap(table->rowsSize, sizes);
-
-        cudaMemcpy(toDeleteCpu, toDelete, sizeof(gpudb::GpuRow *) * (toDeleteSize), cudaMemcpyDeviceToHost);
-        for (int i = 0; i < toDeleteSize; i++) {
-            gpudb::gpuAllocator::getInstance().free(toDeleteCpu[i]);
-        }
-
-        gpudb::GpuStackAllocator::getInstance().popPosition();
-        StackAllocator::getInstance().popPosition();
-        return true;
-    } while(0);
-    gpudb::GpuStackAllocator::getInstance().popPosition();
-    StackAllocator::getInstance().popPosition();
-    return false;
-}
-
-bool DataBase::dropTable(std::string tableName) {
-    auto tableIt = this->tables.find(tableName);
-    auto tableDesc = this->tablesType.find(tableName);
-    if (tableIt == tables.end() || tableDesc == tablesType.end()) {
-        return false;
-    }
-
-    gpudb::GpuTable *table = (*tableIt).second;
-
-    delete table;
-    this->tables.erase(tableIt);
-    this->tablesType.erase(tableDesc);
-    return true;
-}
-
-bool DataBase::update(std::string tableName, std::set<Attribute> const &atrSet, Predicate p) {
-    auto tableIt = this->tables.find(tableName);
-    auto tableDesc = this->tablesType.find(tableName);
-    if (tableIt == tables.end() || tableDesc == tablesType.end()) {
-        return false;
-    }
-
-    TableDescription &desc = (*tableDesc).second;
-    gpudb::GpuTable *table = (*tableIt).second;
-    if (table->rows.size() == 0) {
-        return false;
-    }
-
-    std::vector<Attribute> atrVec(atrSet.begin(), atrSet.end());
-
-    bool canBeUsed = false;
-    uint64_t memsize = 0;
-    int j = 0;
-    for (int i = 0; i < desc.columnDescription.size(); i++) {
-        if (desc.columnDescription[i].name == atrVec[j].name && desc.columnDescription[i].type == atrVec[j].type) {
-            memsize += typeSize(atrVec[j].type);
-            j++;
-
-            if (j == atrVec.size()) {
-                canBeUsed = true;
-                break;
-            }
-        }
-    }
-
-    if (canBeUsed == false) {
-        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "this attribute set cannot be used");
-        return false;
-    }
-    gpudb::GpuStackAllocator::getInstance().pushPosition();
-    StackAllocator::getInstance().pushPosition();
-
-    uint8_t *gpuValuesMemory = gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(memsize);
-    gpudb::Value * gpuValues = gpudb::GpuStackAllocator::getInstance().alloc<gpudb::Value>(atrVec.size());
-    char *gpuStringsMemory = gpudb::GpuStackAllocator::getInstance().alloc<char>(typeSize(Type::STRING) * atrVec.size());
-    char **gpuStringsPointers = gpudb::GpuStackAllocator::getInstance().alloc<char*>(atrVec.size());
-    if (gpuValuesMemory == nullptr || gpuValues == nullptr || gpuStringsMemory == nullptr || gpuStringsPointers == nullptr) {
-        gpudb::GpuStackAllocator::getInstance().popPosition();
-        StackAllocator::getInstance().popPosition();
-        return false;
-    }
-
-    uint8_t *cpuValuesMemory = StackAllocator::getInstance().alloc<uint8_t>(memsize);
-    gpudb::Value * cpuValues = StackAllocator::getInstance().alloc<gpudb::Value>(atrVec.size());
-    char *cpuStringsMemory = StackAllocator::getInstance().alloc<char>(typeSize(Type::STRING) * atrVec.size());
-    char **cpuStringsPointers = StackAllocator::getInstance().alloc<char*>(atrVec.size());
-
-    // копируем значения на cpu
-    uint8_t *cpuValuesMemoryPointer = cpuValuesMemory;
-    char *cpuStringsMemoryPointer = cpuStringsMemory;
-
-    for (int i = 0; i < atrVec.size(); i++) {
-        cpuValues[i].isNull = atrVec[i].isNull;
-        cpuValues[i].value = (void*)cpuValuesMemoryPointer;
-        cpuStringsPointers[i] = cpuStringsMemoryPointer;
-
-        if (cpuValues[i].isNull == false) {
-            memcpy(cpuValues[i].value, atrVec[i].value, typeSize(atrVec[i].type));
-        }
-        strncpy(cpuStringsPointers[i], atrVec[i].name.c_str(), typeSize(atrVec[i].type));
-
-        cpuValuesMemoryPointer += typeSize(atrVec[i].type);
-        cpuStringsMemoryPointer += typeSize(Type::STRING);
-    }
-
-    for (int i = 0; i < atrVec.size(); i++) {
-        cpuValues[i].value = newAddress(cpuValues[i].value, cpuValuesMemory, gpuValuesMemory);
-        cpuStringsPointers[i] = newAddress(cpuStringsPointers[i], cpuStringsMemory, gpuStringsMemory);
-    }
-
-    cudaMemcpy(gpuValues, cpuValues, atrVec.size() * sizeof(gpudb::Value), cudaMemcpyHostToDevice);
-    cudaMemcpy(gpuStringsPointers, cpuStringsPointers, atrVec.size() * sizeof(char*), cudaMemcpyHostToDevice);
-    cudaMemcpy(gpuValuesMemory, cpuValuesMemory, memsize, cudaMemcpyHostToDevice);
-    cudaMemcpy(gpuStringsMemory, cpuStringsMemory, typeSize(Type::STRING) * atrVec.size(), cudaMemcpyHostToDevice);
-
-    dim3 block(BLOCK_SIZE);
-    dim3 grid = gridConfigure(table->rows.size(), block);
-    updaterKernel<<<block, grid>>>(thrust::raw_pointer_cast(table->columns.data()),
-                                   thrust::raw_pointer_cast(table->rows.data()),
-                                   gpuValues,
-                                   gpuStringsPointers,
-                                   atrVec.size(),
-                                   p,
-                                   table->rows.size());
-
-    StackAllocator::getInstance().popPosition();
-    gpudb::GpuStackAllocator::getInstance().popPosition();
-    return false;
-
+    return resultTempTable;
 }

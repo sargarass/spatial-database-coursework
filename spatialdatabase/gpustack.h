@@ -131,19 +131,22 @@ struct Heap{
 template<typename T>
 class GpuStack {
 public:
-    __host__ __device__
+    FUNC_PREFIX
     GpuStack(T *memory, uint size);
 
-    __host__ __device__
+    FUNC_PREFIX
     T top();
+
+    FUNC_PREFIX
     T &topRef();
-    __host__ __device__
+
+    FUNC_PREFIX
     void pop();
 
-    __host__ __device__
+    FUNC_PREFIX
     bool push(T elem);
 
-    __host__ __device__
+    FUNC_PREFIX
     bool empty();
 public:
     T *m_gpuMemory;
@@ -151,7 +154,7 @@ public:
     uint m_size;
 };
 
-template<typename T> __host__ __device__
+template<typename T> FUNC_PREFIX
 GpuStack<T>::GpuStack(T *memory, uint size) {
     if (memory == nullptr) {
         m_gpuMemory = nullptr;
@@ -164,7 +167,7 @@ GpuStack<T>::GpuStack(T *memory, uint size) {
     }
 }
 
-template<typename T> __host__ __device__
+template<typename T> FUNC_PREFIX
 bool GpuStack<T>::push(T elem) {
     if (m_top == m_size || m_gpuMemory == nullptr) {
         return false;
@@ -174,24 +177,24 @@ bool GpuStack<T>::push(T elem) {
     return true;
 }
 
-template<typename T> __host__ __device__
+template<typename T> FUNC_PREFIX
 T GpuStack<T>::top() {
     return m_gpuMemory[m_top - 1];
 }
 
-template<typename T> __host__ __device__
+template<typename T> FUNC_PREFIX
 T &GpuStack<T>::topRef() {
     return m_gpuMemory[m_top - 1];
 }
 
-template<typename T> __host__ __device__
+template<typename T> FUNC_PREFIX
 void GpuStack<T>::pop() {
     if (m_top > 0) {
         --m_top;
     }
 }
 
-template<typename T> __host__ __device__
+template<typename T> FUNC_PREFIX
 bool GpuStack<T>::empty() {
     return m_top == 0;
 }

@@ -1,26 +1,58 @@
 #pragma once
 #include "gpudb.h"
 namespace gpudb {
+    class CRow;
 
-    class  CGpuPolygon {
-
+    class CGpuPolygon {
+    public:
+        FUNC_PREFIX
+        CGpuPolygon();
+        FUNC_PREFIX
+        CGpuPolygon(GpuPolygon *p);
+        FUNC_PREFIX
+        bool getPoint(uint id, float2 &point) const;
+        FUNC_PREFIX
+        uint getPointNum() const;
     private:
         GpuPolygon *polygon;
     };
 
     class CGpuPoint {
+    public:
+        FUNC_PREFIX
+        CGpuPoint();
+        FUNC_PREFIX
+        CGpuPoint(GpuPoint *p);
+        FUNC_PREFIX
+        float2 getPoint() const;
     private:
         GpuPoint *point;
     };
 
     class CGpuLine {
-
+    public:
+        FUNC_PREFIX
+        CGpuLine();
+        FUNC_PREFIX
+        CGpuLine (GpuLine *l);
+        FUNC_PREFIX
+        bool getPoint(uint id, float2 &point) const;
+        FUNC_PREFIX
+        uint getPointNum() const;
     private:
         GpuLine *line;
     };
 
-    class CGpuSET {
-
+    class CGpuSet {
+    public:
+        FUNC_PREFIX
+        CGpuSet();
+        FUNC_PREFIX
+        CGpuSet(GpuSet *set);
+        FUNC_PREFIX
+        bool getRow(uint id, CRow &row) const;
+        FUNC_PREFIX
+        uint getRowNum() const;
     private:
         GpuSet *set;
     };
@@ -28,15 +60,17 @@ namespace gpudb {
     class CRow {
     public:
         FUNC_PREFIX
+        CRow();
+        FUNC_PREFIX
         CRow(gpudb::GpuRow *row, GpuColumnAttribute *columns, uint numColumns);
         FUNC_PREFIX
-        SpatialType  getSpatialKeyType() const ;
+        SpatialType getSpatialKeyType() const ;
         FUNC_PREFIX
-        TemporalType getTemporalType() const ;
+        TemporalType getTemporalKeyType() const ;
         FUNC_PREFIX
-        char const  *getSpatialKeyName() const ;
+        bool getSpatialKeyName(char const  * &name) const ;
         FUNC_PREFIX
-        char const  *getTransactionName() const ;
+        bool getTransactionKeyName(char const  * &name) const ;
         FUNC_PREFIX
         uint getColumnSize() const;
         FUNC_PREFIX
@@ -52,7 +86,7 @@ namespace gpudb {
         FUNC_PREFIX
         bool getColumnREAL(uint id, double &val) const ;
         FUNC_PREFIX
-        bool getColumnSET(uint id, CGpuSET &set) const ;
+        bool getColumnSET(uint id, CGpuSet &set) const ;
         FUNC_PREFIX
         bool getKeyValidTime(Date &start, Date &end) const ;
         FUNC_PREFIX
@@ -63,7 +97,6 @@ namespace gpudb {
         bool getKeyGpuPolygon(CGpuPolygon &polygon) const ;
         FUNC_PREFIX
         bool getKeyGpuLine(CGpuLine &line) const ;
-
     private:
         gpudb::GpuRow *row;
         GpuColumnAttribute *columns;

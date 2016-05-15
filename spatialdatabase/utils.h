@@ -6,5 +6,4 @@
 
 __device__
 uint getGlobalIdx3DZXY();
-FUNC_PREFIX
 dim3 gridConfigure(uint64_t problemSize, dim3 block);

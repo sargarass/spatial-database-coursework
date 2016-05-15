@@ -1,69 +1,41 @@
 #pragma once
 #include "types.h"
 #include "gpudb.h"
+class TempTable;
 
 class Attribute {
     friend class gpudb::GpuTable;
     friend class DataBase;
 public:
-    Attribute() {
-        type = Type::UNKNOWN;
-        isNull = true;
-        value = nullptr;
-    }
-
-    bool setName(std::string name) {
-        if (name.length() > NAME_MAX_LEN) {
-            return false;
-        }
-
-        this->name = name;
-        return true;
-    }
+    Attribute();
+    ~Attribute();
+    void operator=(Attribute const &c);
+    Attribute(Attribute const &c);
+    bool setName(std::string name);
+    std::string getName() const;
+    bool isNull() const;
+    Type getType() const;
+    std::string getString() const;
+    int64_t getInt() const;
+    double getReal() const;
+    TempTable *getSet() const;
 
     template<typename T>
-    bool setValue(bool isNull, T val = T()) {
-        UNUSED_PARAM_HANDLER(isNull, val);
+    bool setValue(T val = T()) {
+        UNUSED_PARAM_HANDLER(val);
         return false;
     }
 
-    bool operator<(Attribute const &b) const {
-        return name < b.name;
-    }
+    bool setNullValue(Type t);
 
-    bool operator==(Attribute const &b) const {
-        return name == b.name;
-    }
-
+    bool operator<(Attribute const &b) const;
+    bool operator==(Attribute const &b) const;
 private:
-    bool setValueImp(Type t, void const *val) {
-        if (value) {
-            delete [] (char*)(value);
-        }
-
-        uint64_t type_size = typeSize(t);
-        uint8_t* value_ptr = new uint8_t[type_size];
-        switch(t) {
-            case Type::STRING:
-                {
-                    memset(value_ptr, 0, type_size);
-                    uint64_t copysize = std::min(type_size, (uint64_t)(strlen((char*) val)));
-                    memcpy(value_ptr, val, copysize);
-                    value_ptr[copysize] = 0;
-                }
-                break;
-            default:
-                memcpy(value_ptr, val, type_size);
-                break;
-        }
-
-        value = reinterpret_cast<void*>(value_ptr);
-        return true;
-    }
+    bool setValueImp(Type t, void const *val);
 
     std::string name;
     Type type;
-    bool isNull;
+    bool isNullVal;
     void *value;
 };
 
@@ -72,10 +44,7 @@ public:
     SpatialType type;
     std::string name;
     std::vector<float2> points;
-
     bool isValid();
-    bool addVertex(float2 v) {UNUSED_PARAM_HANDLER(v); return false; }
-    bool delVertex(float2 v) {UNUSED_PARAM_HANDLER(v); return false; }
 };
 
 class TemportalKey {
@@ -86,6 +55,7 @@ public:
 
     Date validTimeS;
     Date validTimeE;
+    Date transactionTime;
 
     bool isValid() {
         bool validT = validTimeE.isValid() && validTimeS.isValid() && (validTimeS.codeDate() <= validTimeE.codeDate());
@@ -101,8 +71,6 @@ public:
         }
         return false;
     }
-protected:
-    Date transactionTime;
 };
 
 class Row {
@@ -134,6 +102,14 @@ public:
         return true;
     }
 
+    uint getAttributeSize() {
+        return values.size();
+    }
+
+    Attribute const &getAttribute(uint id) {
+        return values[id];
+    }
+
     void clearAttributes() {
         values.clear();
     }
@@ -143,26 +119,26 @@ protected:
 };
 
 template<>
-bool Attribute::setValue(bool isNull, int64_t const val);
+bool Attribute::setValue(int64_t const val);
 template<>
-bool Attribute::setValue(bool isNull, int32_t const val);
+bool Attribute::setValue(int32_t const val);
 template<>
-bool Attribute::setValue(bool isNull, uint32_t const val);
+bool Attribute::setValue(uint32_t const val);
 template<>
-bool Attribute::setValue(bool isNull, uint64_t const val);
+bool Attribute::setValue(uint64_t const val);
 template<>
-bool Attribute::setValue(bool isNull, float const val);
+bool Attribute::setValue(float const val);
 template<>
-bool Attribute::setValue(bool isNull, double const val);
+bool Attribute::setValue(double const val);
 template<>
-bool Attribute::setValue(bool isNull, std::string const &val);
+bool Attribute::setValue(std::string const &val);
 template<>
-bool Attribute::setValue(bool isNull, std::string val);
+bool Attribute::setValue(std::string val);
 template<>
-bool Attribute::setValue(bool isNull, char *val);
+bool Attribute::setValue(char *val);
 template<>
-bool Attribute::setValue(bool isNull, char const *val);
+bool Attribute::setValue(char const *val);
 template<>
-bool Attribute::setValue(bool isNull, Date const &date);
+bool Attribute::setValue(Date const &date);
 template<>
-bool Attribute::setValue(bool isNull, Date const date);
+bool Attribute::setValue(Date const date);

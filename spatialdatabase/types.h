@@ -11,6 +11,9 @@
 #define BLOCK_SIZE 512
 #define FUNC_PREFIX __host__ __device__
 
+#include <openssl/sha.h>
+
+
 static FUNC_PREFIX
 float clamp(float in, float min, float max) {
     float res = (in > max)? max : in;
@@ -45,6 +48,15 @@ enum class TemporalType {
     UNKNOWN
 };
 
+
+enum class AABBRelation {
+    OVERLAP,
+    BINSIDEA,
+    DISJOINT,
+    EQUAL
+};
+
 std::string typeToString(Type t);
+std::string typeToString(SpatialType t);
 FUNC_PREFIX
 uint64_t typeSize(Type t);

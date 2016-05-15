@@ -2,6 +2,10 @@
 #include "database.h"
 #include <stack>
 TempTable::~TempTable() {
+    deinit();
+}
+
+void TempTable::deinit() {
     for (auto& v : needToBeFree) {
         delete (void*) v;
     }
@@ -30,8 +34,13 @@ TempTable::~TempTable() {
     if (table) {
         delete this->table;
     }
+
     this->table = nullptr;
     this->valid = false;
+    this->description = TableDescription();
+    this->needToBeFree.clear();
+    this->parents.clear();
+    this->references.clear();
 }
 
 TempTable::TempTable() {
@@ -39,11 +48,21 @@ TempTable::TempTable() {
     this->valid = false;
 }
 
-bool TempTable::showTable() {
-    if (this->table == nullptr) {
-        return false;
+void TempTable::operator=(TempTable &t) {
+    if (this->table) {
+        deinit();
     }
-    return DataBase::getInstance().showTable(*this->table, this->description);
+
+    std::swap(this->description, t.description);
+    std::swap(this->table, t.table);
+    std::swap(this->needToBeFree, t.needToBeFree);
+    std::swap(this->parents, t.parents);
+    std::swap(this->references, t.references);
+    std::swap(this->valid, t.valid);
+}
+
+TempTable::TempTable(TempTable &table) {
+    *this = table;
 }
 
 SpatialType TempTable::getSpatialKeyType() const {

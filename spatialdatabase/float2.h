@@ -65,6 +65,13 @@ float2 operator * (float c, float2 a)
 }
 
 static FUNC_PREFIX
+float dot(float2 a, float2 b)
+{
+    return a.x * b.x + a.y * b.y;
+}
+
+
+static FUNC_PREFIX
 float len(float2 a)
 {
     return sqrt(a.x * a.x + a.y * a.y);
@@ -73,6 +80,13 @@ float len(float2 a)
 static FUNC_PREFIX
 float lenSqr(float2 a, float2 b) {
     return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
+}
+
+static FUNC_PREFIX
+float2 norma(float2 a)
+{
+    float c = 1.0f / (len(a) + 1e-15f);
+    return make_float2(a.x * c, a.y * c);
 }
 
 

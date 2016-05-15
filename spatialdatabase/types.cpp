@@ -16,7 +16,20 @@ std::string typeToString(Type t) {
         default:
             return "UNKNOWN";
     }
-    return "UNKNOWN";
 }
+
+std::string typeToString(SpatialType t) {
+    switch (t) {
+        case SpatialType::POINT:
+            return "POINT";
+        case SpatialType::POLYGON:
+            return "POLYGON";
+        case SpatialType::LINE:
+            return "LINE";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 
 

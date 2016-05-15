@@ -4,21 +4,23 @@
 
 struct  __align__(16) TempTable {
     friend class DataBase;
-    friend bool pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k, TempTable &result);
 public:
     SpatialType getSpatialKeyType() const;
     TemporalType getTemporalType() const;
-    std::vector<Row> selectByKey(/* INTERSECTION / FULL INSIDE / EXACTLY */) const;
 
     ~TempTable();
     TempTable();
+
+    TempTable(TempTable &table);
+    void operator=(TempTable &t);
     bool isValid() const;
-    bool showTable();
-public:
+    void deinit();
+private:
+    TempTable(TempTable const &table){UNUSED_PARAM_HANDLER(table);}
+    void operator=(TempTable const &t){ UNUSED_PARAM_HANDLER(t);}
     std::list<TempTable *> references;
     std::list<TempTable *> parents;
     std::list<uintptr_t> needToBeFree;
-    TempTable(TempTable const &table);
     gpudb::GpuTable *table;
     TableDescription description;
     bool valid;

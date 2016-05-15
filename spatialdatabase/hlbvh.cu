@@ -2,8 +2,6 @@
 #include "utils.h"
 #include <cub/cub/cub.cuh>
 
-
-
 gpudb::HLBVH::HLBVH() {
     this->memorySize = 0;
     this->numBVHLevels = 0;
@@ -59,7 +57,7 @@ void gpudb::HLBVH::free() {
 
 ///////////////////////////////////////
 /// Morton code part {
-static __global__
+__global__ static
 void computeMortonCodesAndReferenceKernel(gpudb::MortonCode *keys, uint *values, gpudb::AABB *aabb, gpudb::AABB globalAABB, uint32_t size) {
     uint thread = getGlobalIdx3DZXY();
     if (thread >= size) {
@@ -73,7 +71,7 @@ void computeMortonCodesAndReferenceKernel(gpudb::MortonCode *keys, uint *values,
 void computeMortonCodesAndReference(gpudb::MortonCode *keys, uint *values, gpudb::AABB *aabb, gpudb::AABB globalAABB, uint size) {
     dim3 block = dim3(BLOCK_SIZE);
     dim3 grid = gridConfigure(size, block);
-    computeMortonCodesAndReferenceKernel<<<grid,block>>>(keys, values, aabb, globalAABB, size);
+    computeMortonCodesAndReferenceKernel <<<grid,block>>> (keys, values, aabb, globalAABB, size);
 }
 
 __global__
@@ -121,9 +119,11 @@ void copyKeys(gpudb::MortonCode *new_keys, gpudb::MortonCode *old_keys, uint *ne
     new_keys[thread].high = old_keys[old_values[thread]].high;
     new_values[thread] = old_values[thread];
 }
-
+#include "moderngpu/src/moderngpu/kernel_mergesort.hxx"
 bool sortMortonCodes(gpudb::MortonCode *keys, uint *values, uint size) {
-    // 96 bit
+    mgpu::standard_context_t context;
+    mgpu::mergesort(keys, values, size, mgpu::less_t<gpudb::MortonCode>(), context);
+   /* // 96 bit
     Timer t;
     t.start();
     uint64_t *cub_keys[2];
@@ -139,10 +139,10 @@ bool sortMortonCodes(gpudb::MortonCode *keys, uint *values, uint size) {
 
     size_t cub_tmp_memory_size = 0;
     size_t cub_tmp_memory_size2 = 0;
-    cub::DeviceRadixSort::SortPairs(nullptr, cub_tmp_memory_size, cub_keys[0], cub_keys[0], cub_keys[0], cub_keys[0], size);
-    cub::DeviceScan::ExclusiveSum(nullptr, cub_tmp_memory_size2, cub_values[0], cub_values[0], size);
+    cub::DeviceRadixSort::SortPairs(nullptr, cub_tmp_memory_size, cub_keys[0], cub_keys[0], cub_keys[0], cub_keys[0], static_cast<int>(size));
+    cub::DeviceScan::ExclusiveSum(nullptr, cub_tmp_memory_size2, cub_values[0], cub_values[0], static_cast<int>(size));
     cub_tmp_memory_size = std::max(cub_tmp_memory_size, cub_tmp_memory_size2);
-    void *cub_tmp_memory  = (void *)gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(cub_tmp_memory_size);
+    void *cub_tmp_memory  = static_cast<void *>( gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(cub_tmp_memory_size) );
 
     if (cub_keys[0] == nullptr || cub_values[0] == nullptr ||
         cub_keys[1] == nullptr || cub_values[1] == nullptr ||
@@ -155,7 +155,7 @@ bool sortMortonCodes(gpudb::MortonCode *keys, uint *values, uint size) {
     initKeys<<<grid, block>>>(cub_keys[switcher], cub_values[switcher], keys, size);
     cub::DeviceRadixSort::SortPairs(cub_tmp_memory, cub_tmp_memory_size,
                                     cub_keys[switcher], cub_keys[1 - switcher],
-                                    cub_values[switcher], cub_values[1 - switcher], size);
+                                    cub_values[switcher], cub_values[1 - switcher], static_cast<int>( size ));
     switcher = 1 - switcher;
     // Чтобы сохранить порядок, посчитаем префиксную сумму
     // и в качестве ключа будем использовать
@@ -176,7 +176,7 @@ bool sortMortonCodes(gpudb::MortonCode *keys, uint *values, uint size) {
     copyKeys<<<grid, block>>>(keys, old, values, cub_values[1], size);
     cudaDeviceSynchronize();
     gpudb::GpuStackAllocator::getInstance().popPosition();
-    gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "radixsort %d ms", t.elapsedMillisecondsU64());
+    gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "radixsort %d ms", t.elapsedMillisecondsU64());*/
     return true;
 }
 
@@ -576,55 +576,4 @@ bool gpudb::HLBVH::build(AABB *aabb, uint32_t size) {
     StackAllocator::getInstance().popPosition();
     gpuStackAlloc.popPosition();
     return false;
-}
-
-__device__
-bool boxIntersection(float4 aMin, float4 aMax, float4 bMin, float4 bMax) {
-    if (aMin.x < bMin.x) return false;
-    if (aMax.x > bMax.x) return false;
-    if (aMin.y < bMin.y) return false;
-    if (aMax.y > bMax.y) return false;
-    if (aMin.z < bMin.z) return false;
-    if (aMax.z > bMax.z) return false;
-    if (aMin.w < bMin.w) return false;
-    if (aMax.w > bMax.w) return false;
-    return true;
-}
-
-__global__
-void searchAABBkernel(gpudb::HLBVH hlbvh, float4 aabbMin, float4 aabbMax, uint size, bool *result, int *stack, int StackSize) {
-    int id = getGlobalIdx3DZXY();
-    if (id >= size) {
-        return;
-    }
-
-    GpuStack<int> st(stack, StackSize);
-    st.push(0);
-    st.push(1);
-    while(!st.empty()) {
-        int nodeId = st.top();
-        st.pop();
-        float4 boxAmin = hlbvh.aabbMin[nodeId];
-        float4 boxAmax = hlbvh.aabbMax[nodeId];
-        if (hlbvh.links[nodeId] == LEAF) {
-            if (aabbMin.x == boxAmin.x
-                && aabbMin.y == boxAmin.y
-                && aabbMin.z == boxAmin.z
-                && aabbMin.w == boxAmin.w
-                && aabbMax.x == boxAmax.x
-                && aabbMax.y == boxAmax.y
-                && aabbMax.z == boxAmax.z
-                && aabbMax.w == boxAmax.w)
-            {
-                *result = true;
-                return;
-            }
-        } else {
-            if (boxIntersection(aabbMin, aabbMax, boxAmin, boxAmax)) {
-                st.push(hlbvh.links[nodeId] + 0);
-                st.push(hlbvh.links[nodeId] + 1);
-            }
-        }
-    }
-    *result = false;
 }

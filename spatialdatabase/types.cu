@@ -17,5 +17,4 @@ uint64_t typeSize(Type t) {
         default:
             return 0;
     }
-    return 0;
 }
