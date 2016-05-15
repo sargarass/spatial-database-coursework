@@ -13,216 +13,126 @@ gpudb::CRow::CRow(gpudb::GpuRow *row, GpuColumnAttribute *columns, uint numColum
 }
 
 SpatialType gpudb::CRow::getSpatialKeyType() const {
-    if (row == nullptr) {
-        return SpatialType::UNKNOWN;
-    }
     return row->spatialPart.type;
 }
 
 TemporalType gpudb::CRow::getTemporalKeyType() const {
-    if (row == nullptr) {
-         return TemporalType::UNKNOWN;
-    }
     return row->temporalPart.type;
 }
 
-bool gpudb::CRow::getSpatialKeyName(char const  * &name) const {
+const char *gpudb::CRow::getSpatialKeyName() const {
     if (row == nullptr) {
-        return false;
+        return "(null)";
     }
-    name = row->spatialPart.name;
-    return true;
+    return row->spatialPart.name;
 }
 
-bool gpudb::CRow::getTransactionKeyName(char const  * &name) const {
+const char *gpudb::CRow::getTransactionKeyName() const {
     if (row == nullptr) {
-        return false;
+        return "(null)";
     }
-    name = row->temporalPart.name;
-    return true;
+    return row->temporalPart.name;
 }
 
-bool gpudb::CRow::getColumnType(uint id, Type &t) const {
+Type gpudb::CRow::getColumnType(uint id) const {
+    return columns[id].type;
+}
+
+bool gpudb::CRow::getColumnIsNull(uint id) const {
+    return this->row->value[id].isNull;
+}
+
+const char *gpudb::CRow::getColumnName(uint id) const {
     if (id >= numColumns) {
-        return false;
+        return "(null)";
     }
-
-    t = columns[id].type;
-    return true;
+    return columns[id].name;
 }
 
-bool gpudb::CRow::getColumnIsNull(uint id, bool &isNull) const {
-    if (id >= numColumns) {
-        return false;
-    }
-
-    isNull = this->row->value[id].isNull;
-    return true;
+int64_t gpudb::CRow::getColumnINT(uint id) const {
+    return *(int64_t*)(this->row->value[id].value);
 }
 
-bool gpudb::CRow::getColumnName(uint id, char const * &name) const {
-    if (id >= numColumns) {
-        return false;
-    }
-
-    name = columns[id].name;
-    return true;
+char const *gpudb::CRow::getColumnSTRING(uint id) const {
+    return (char*)(this->row->value[id].value);
 }
 
-bool gpudb::CRow::getColumnINT(uint id, int64_t &val) const {
-    if (id >= numColumns) {
-        return false;
-    }
-    if (columns[id].type != Type::INT) {
-        return false;
-    }
-
-    val = *(int64_t*)(this->row->value[id].value);
-
-    return true;
+double gpudb::CRow::getColumnREAL(uint id) const {
+    return *(double*)(this->row->value[id].value);
 }
 
-bool gpudb::CRow::getColumnSTRING(uint id, char const * &val) const {
-    if (id >= numColumns) {
-        return false;
-    }
-    if (columns[id].type != Type::STRING) {
-        return false;
-    }
-
-    val = (char*)(this->row->value[id].value);
-    return true;
-}
-
-bool gpudb::CRow::getColumnREAL(uint id, double &val) const {
-    if (id >= numColumns || columns[id].type != Type::REAL) {
-        return false;
-    }
-    val = *(double*)(this->row->value[id].value);
-    return true;
-}
-
-bool gpudb::CRow::getColumnSET(uint id, CGpuSet &set) const {
-    if (this->row == nullptr || id >= numColumns || columns[id].type != Type::SET) {
-        return false;
-    }
+gpudb::CGpuSet gpudb::CRow::getColumnSET(uint id) const {
     CGpuSet s((GpuSet*)this->row->value[id].value);
-    set = s;
-    return true;
+    return s;
 }
 
-bool gpudb::CRow::getKeyValidTime(Date &start, Date &end) const {
-    if (this->row == nullptr) {
-        return false;
-    }
-
-    if (this->row->temporalPart.type == TemporalType::VALID_TIME || this->row->temporalPart.type == TemporalType::BITEMPORAL_TIME) {
-        start.setFromCode(this->row->temporalPart.validTimeSCode);
-        end.setFromCode(this->row->temporalPart.validTimeECode);
-        return true;
-    }
-    return false;
+Date gpudb::CRow::getKeyValidTimeStart() const {
+    Date start;
+    start.setFromCode(this->row->temporalPart.validTimeSCode);
+    return start;
 }
 
-bool gpudb::CRow::getKeyTransationType(Date &d) const {
-    if (this->row == nullptr) {
-        return false;
-    }
-
-    if (this->row->temporalPart.type == TemporalType::TRANSACTION_TIME || this->row->temporalPart.type == TemporalType::BITEMPORAL_TIME) {
-        d.setFromCode(this->row->temporalPart.transactionTimeCode);
-        return true;
-    }
-
-    return false;
+Date gpudb::CRow::getKeyValidTimeEnd() const {
+    Date end;
+    end.setFromCode(this->row->temporalPart.validTimeECode);
+    return end;
 }
 
-bool gpudb::CRow::getKeyGpuPoint(CGpuPoint &point) const {
-    if (this->row->spatialPart.type != SpatialType::POINT || this->row == nullptr) {
-        return false;
-    }
+Date gpudb::CRow::getKeyTransationType() const {
+    Date t;
+    t.setFromCode(row->temporalPart.transactionTimeCode);
+    return t;
+}
+
+gpudb::CGpuPoint gpudb::CRow::getKeyGpuPoint() const {
     CGpuPoint p((GpuPoint*)this->row->spatialPart.key);
-    point = p;
-    return true;
+    return p;
 }
 
 uint gpudb::CRow::getColumnSize() const {
     return numColumns;
 }
 
-bool gpudb::CRow::getKeyGpuPolygon(CGpuPolygon &polygon) const {
-    if (this->row->spatialPart.type != SpatialType::POLYGON || this->row == nullptr) {
-        return false;
-    }
-
+gpudb::CGpuPolygon gpudb::CRow::getKeyGpuPolygon() const {
     CGpuPolygon p((GpuPolygon*)this->row->spatialPart.key);
-    polygon = p;
-    return true;
+    return p;
 }
 
-bool gpudb::CRow::getKeyGpuLine(CGpuLine &line) const {
-    if (this->row->spatialPart.type != SpatialType::LINE || this->row == nullptr) {
-        return false;
-    }
+gpudb::CGpuLine gpudb::CRow::getKeyGpuLine() const {
     CGpuLine l((GpuLine*)this->row->spatialPart.key);
-    line = l;
-    return true;
+    return l;
 }
 
 
-bool gpudb::CGpuPolygon::getPoint(uint id, float2 &point) const {
-    if (id >= this->polygon->size || this->polygon == nullptr) {
-        return false;
-    }
-
-    point = this->polygon->points[id];
-    return true;
+float2 gpudb::CGpuPolygon::getPoint(uint id) const {
+    return this->polygon->points[id];
 }
 
 uint gpudb::CGpuPolygon::getPointNum() const {
     if (polygon == nullptr) {
         return 0;
     }
-
     return this->polygon->size;
 }
 
 float2 gpudb::CGpuPoint::getPoint() const {
-    if (point == nullptr) {
-        return make_float2(NAN, NAN);
-    }
     return this->point->p;
 }
 
-bool gpudb::CGpuLine::getPoint(uint id, float2 &point) const {
-    if (id >= this->line->size || line == nullptr) {
-        return false;
-    }
-    point = this->line->points[id];
-    return true;
+float2 gpudb::CGpuLine::getPoint(uint id) const {
+    return this->line->points[id];
 }
 
 uint gpudb::CGpuLine::getPointNum() const {
-    if (line == nullptr) {
-        return 0;
-    }
     return this->line->size;
 }
 
-bool gpudb::CGpuSet::getRow(uint id, CRow& row) const {
-    if (id >= this->set->rowsSize || set == nullptr) {
-        return false;
-    }
-
+gpudb::CRow gpudb::CGpuSet::getRow(uint id) const {
     CRow nrow(this->set->rows[id], this->set->columns, this->set->columnsSize);
-    row = nrow;
-    return true;
+    return nrow;
 }
 
 uint gpudb::CGpuSet::getRowNum() const {
-    if (set == nullptr) {
-        return 0;
-    }
     return this->set->rowsSize;
 }
 

@@ -255,7 +255,8 @@ void boxInsideBoxSubKernel(float4 aabbMin, float4 aabbMax, uint &numBoxBinside, 
 }
 
 __device__
-void boxInsideBoxSubKernel(uint idx, float4 aabbMin, float4 aabbMax, uint numBoxBInside, uint offsets, uint *testedBoxANum, uint *testedBoxBNum, gpudb::HLBVH &bvh, uint *stack, uint stackSize) {
+void boxInsideBoxSubKernel(uint idx, float4 aabbMin, float4 aabbMax, uint numBoxBInside, uint offsets, uint *testedBoxANum,
+                           uint *testedBoxBNum, gpudb::HLBVH &bvh, uint *stack, uint stackSize) {
     GpuStack<uint> st(stack, stackSize);
     uint num = numBoxBInside;
     uint pointCounter = 0;
@@ -314,7 +315,8 @@ void boxInsideBoxKernel(gpudb::GpuRow **rowsBoxA, uint *numBoxBinside, gpudb::HL
 }
 
 __global__
-void boxInsideBoxKernel2(gpudb::GpuRow **rowsBoxA, uint *numBoxBInside, uint *offsets, uint *testedBoxANum, uint *testedBoxBNum, gpudb::HLBVH bvh, uint *stack, uint stackSize, uint workSize) {
+void boxInsideBoxKernel2(gpudb::GpuRow **rowsBoxA, uint *numBoxBInside, uint *offsets, uint *testedBoxANum, uint *testedBoxBNum,
+                         gpudb::HLBVH bvh, uint *stack, uint stackSize, uint workSize) {
     uint idx = getGlobalIdx3DZXY();
     if (idx >= workSize) {
         return;
@@ -350,7 +352,8 @@ void boxInsideBoxLineKernel(gpudb::GpuRow **rowsBoxA, uint *numBoxBinside, gpudb
 }
 
 __global__
-void boxInsideBoxLineKernel2(gpudb::GpuRow **rowsBoxA, uint *numBoxBInside, uint *offsets, uint *testedBoxANum, uint *testedBoxBNum, gpudb::HLBVH bvh, uint *stack, uint stackSize, uint workSize, float radius) {
+void boxInsideBoxLineKernel2(gpudb::GpuRow **rowsBoxA, uint *numBoxBInside, uint *offsets, uint *testedBoxANum, uint *testedBoxBNum,
+                             gpudb::HLBVH bvh, uint *stack, uint stackSize, uint workSize, float radius) {
     uint idx = getGlobalIdx3DZXY();
     if (idx >= workSize) {
         return;
@@ -375,7 +378,8 @@ float isLeft(float2 s, float2 e, float2 p) {
 }
 
 __global__
-void pointInsidePolygonKernel(gpudb::GpuRow **polygons, uint *numPoints, uint *testedPolygonNum, uint *testedPointNum, uint *testResult, gpudb::GpuRow **points, uint sizeWork) {
+void pointInsidePolygonKernel(gpudb::GpuRow **polygons, uint *numPoints, uint *testedPolygonNum, uint *testedPointNum,
+                              uint *testResult, gpudb::GpuRow **points, uint sizeWork) {
     uint idx = getGlobalIdx3DZXY();
     if (idx >= sizeWork) {
         return;
@@ -399,12 +403,9 @@ void pointInsidePolygonKernel(gpudb::GpuRow **polygons, uint *numPoints, uint *t
         }
     }
     testResult[idx] = wn != 0;
-    if (wn != 0) {
+    /*if (wn != 0) {
         printf("{%f %f}\n", p.x, p.y);
-    }
-    if (wn == 0) {
-        atomicSub(&numPoints[testedPolygonNum[idx]], 1);
-    }
+    }*/
 }
 
 __device__
@@ -430,7 +431,8 @@ bool insideRect(float2 A, float2 B, float2 C, float2 D, float2 point) {
 }
 
 __global__
-void pointInsideLineBufferKernel(gpudb::GpuRow **lines, uint *numPoints, uint *testedLineNum, uint *testedPointNum, uint *testResult, gpudb::GpuRow **points, uint sizeWork, float radius) {
+void pointInsideLineBufferKernel(gpudb::GpuRow **lines, uint *numPoints, uint *testedLineNum, uint *testedPointNum, uint *testResult,
+                                 gpudb::GpuRow **points, uint sizeWork, float radius) {
     uint idx = getGlobalIdx3DZXY();
     if (idx >= sizeWork) {
         return;
@@ -463,15 +465,306 @@ void pointInsideLineBufferKernel(gpudb::GpuRow **lines, uint *numPoints, uint *t
         if (result) { break; }
     }
 
-    if (result) {
+    /*if (result) {
         printf("%d %f %f\n", testedPointNum[idx], p.x, p.y);
-    }
+    }*/
 
     testResult[idx] = result;
+}
 
-    if (result == false) {
-        atomicSub(&numPoints[testedLineNum[idx]], 1);
+__global__
+void computeResultSize(uint *result, uint *resultPrefixSum, uint *testedPrefixSum, uint workSize) {
+    uint idx = getGlobalIdx3DZXY();
+    if (idx >= workSize) {
+        return;
     }
+
+    uint offset = resultPrefixSum[idx + 1]; // сумма a0 + ... + a_idx
+    result[idx] = testedPrefixSum[offset];
+}
+
+__global__
+void computeResultSize2(uint *result, uint workSize) {
+    uint idx = getGlobalIdx3DZXY();
+    if (idx >= workSize) {
+        return;
+    }
+
+    uint sub = 0;
+    if (idx > 0) {
+        sub = result[idx - 1];
+    }
+
+    result[idx] = result[idx] - sub;
+}
+
+
+__global__
+void selector(uint *dsc, uint *pointNum, uint *tests, uint *offset, uint workSize) {
+    uint idx = getGlobalIdx3DZXY();
+    if (idx >= workSize) {
+        return;
+    }
+
+    if (tests[idx]) {
+        dsc[offset[idx]] = pointNum[idx];
+    }
+}
+
+bool DataBase::resultToTempTable2(TempTable const &sourceA, TempTable &sourceB, std::string nameForNewTempTebles,
+                                 TempTable **newTempTables, std::string nameForResultTempTable, TempTable &resultTempTable) {
+    gpudb::GpuTable *resultTable = new gpudb::GpuTable;
+
+    if (resultTable == nullptr) {
+        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "not enought memory");
+        return false;
+    }
+
+    StackAllocator::getInstance().pushPosition();
+    gpudb::GpuStackAllocator::getInstance().pushPosition();
+    do {
+        gpudb::GpuColumnAttribute atr;
+        std::snprintf(atr.name, NAME_MAX_LEN, nameForNewTempTebles.c_str());
+        atr.type = Type::SET;
+
+        AttributeDescription desc;
+        desc.name.resize(NAME_MAX_LEN);
+        std::snprintf(&desc.name[0], NAME_MAX_LEN, nameForNewTempTebles.c_str());
+        desc.type = Type::SET;
+
+        resultTable->bvh.builded = false;
+        std::snprintf(resultTable->name, NAME_MAX_LEN, nameForResultTempTable.c_str());
+        resultTable->rows.reserve(sourceA.table->rows.size());
+        resultTable->rowsSize.resize(sourceA.table->rows.size());
+        resultTable->columns.reserve(sourceA.table->columns.size() + 1);
+        resultTable->columns = sourceA.table->columns;
+        resultTable->columns.push_back(atr);
+
+        TableDescription tdescription;
+        tdescription = sourceA.description;
+        tdescription.columnDescription.push_back(desc);
+        tdescription.name = nameForResultTempTable;
+        uint8_t **resultRows = StackAllocator::getInstance().alloc<uint8_t*>(sourceA.table->rows.size());
+
+        if (resultRows == nullptr) {
+            gLogWrite(LOG_MESSAGE_TYPE::ERROR, "not enought cpu memory");
+            break;
+        }
+
+        thrust::host_vector<gpudb::GpuRow*> hostRowsResult;
+        hostRowsResult.resize(sourceA.table->rows.size());
+
+        uint64_t maxSize = 0;
+        for (uint i = 0; i < sourceA.table->rows.size(); i++) {
+            uint64_t memsize = sourceA.table->rowsSize[i] + sizeof(gpudb::Value) + typeSize(Type::SET);
+            maxSize = std::max(memsize, maxSize);
+
+            resultTable->rowsSize[i] = memsize;
+            resultRows[i] = gpudb::gpuAllocator::getInstance().alloc<uint8_t>(memsize);
+            hostRowsResult[i] = ((gpudb::GpuRow*)(resultRows[i]));
+
+            if (resultRows[i] == nullptr) {
+                gLogWrite(LOG_MESSAGE_TYPE::ERROR, "not enought memory");
+                for (int j = 0; j < i; j++) {
+                    gpudb::gpuAllocator::getInstance().free(resultRows[j]);
+                }
+                goto error;
+            }
+
+        }
+
+        uint8_t *cpuRow = StackAllocator::getInstance().alloc<uint8_t>(maxSize);
+        if (cpuRow == nullptr) {
+            gLogWrite(LOG_MESSAGE_TYPE::ERROR, "not enought cpu memory");
+            for (int j = 0; j < sourceA.table->rows.size(); j++) {
+                gpudb::gpuAllocator::getInstance().free(resultRows[j]);
+            }
+            break;
+        }
+
+        resultTable->rows = hostRowsResult;
+
+        thrust::host_vector<gpudb::GpuRow*> hostRows = sourceA.table->rows;
+        for (uint i = 0; i < sourceA.table->rows.size(); i++) {
+            uint8_t *aRow = StackAllocator::getInstance().alloc<uint8_t>(sourceA.table->rowsSize[i]);
+            DataBase::getInstance().loadCPU((gpudb::GpuRow*)aRow, hostRows[i], sourceA.table->rowsSize[i]);
+            gpudb::GpuRow* cpuRowPointer = ((gpudb::GpuRow*)cpuRow);
+            gpudb::GpuRow* aCpuRowPointer = ((gpudb::GpuRow*)aRow);
+            uintptr_t cpuRawPointer = ((uintptr_t)cpuRow);
+
+            strncpy(cpuRowPointer->spatialPart.name, aCpuRowPointer->spatialPart.name, typeSize(Type::STRING));
+            cpuRowPointer->spatialPart.name[typeSize(Type::STRING) - 1] = 0;
+            strncpy(cpuRowPointer->temporalPart.name, aCpuRowPointer->temporalPart.name, typeSize(Type::STRING));
+            cpuRowPointer->temporalPart.name[typeSize(Type::STRING) - 1] = 0;
+
+            cpuRowPointer->spatialPart.type = aCpuRowPointer->spatialPart.type;
+            cpuRowPointer->temporalPart.type = sourceA.description.temporalKeyType;
+            cpuRowPointer->valueSize = tdescription.columnDescription.size();
+            cpuRowPointer->value = (gpudb::Value*)(cpuRawPointer + sizeof(gpudb::GpuRow));
+
+            uintptr_t memoryValues = cpuRawPointer + sizeof(gpudb::GpuRow) + sizeof(gpudb::Value) * cpuRowPointer->valueSize;
+            for (uint j = 0; j < tdescription.columnDescription.size(); j++) {
+                cpuRowPointer->value[j].value = (void*)memoryValues;
+                if (j < sourceA.description.columnDescription.size()) {
+                    cpuRowPointer->value[j].isNull = aCpuRowPointer->value[j].isNull;
+                } else {
+                    cpuRowPointer->value[j].isNull = false;
+                }
+
+                uint64_t attrSize = typeSize(tdescription.columnDescription[j].type);
+                if (j < sourceA.description.columnDescription.size()) {
+                    memcpy(cpuRowPointer->value[j].value, aCpuRowPointer->value[j].value, attrSize);
+                } else {
+                    gpudb::GpuSet set;
+                    set.temptable = newTempTables[i];
+                    set.columns = thrust::raw_pointer_cast(newTempTables[i]->table->columns.data());
+                    set.rows = thrust::raw_pointer_cast(newTempTables[i]->table->rows.data());
+                    set.rowsSize = newTempTables[i]->table->rows.size();
+                    set.columnsSize = newTempTables[i]->table->columns.size();
+
+                    memcpy(cpuRowPointer->value[j].value, &set, attrSize);
+                }
+                memoryValues += attrSize;
+            }
+
+            cpuRowPointer->spatialPart.key = (void*)memoryValues;
+            switch (tdescription.spatialKeyType) {
+                case SpatialType::POINT:
+                {
+                    gpudb::GpuPoint *p1 = ((gpudb::GpuPoint*)(cpuRowPointer->spatialPart.key));
+                    gpudb::GpuPoint *p2 = ((gpudb::GpuPoint*)(aCpuRowPointer->spatialPart.key));
+                    p1->p = p2->p;
+                }
+                break;
+                case SpatialType::LINE:
+                {
+                    gpudb::GpuLine *l1 = ((gpudb::GpuLine*)(cpuRowPointer->spatialPart.key));
+                    gpudb::GpuLine *l2 = ((gpudb::GpuLine*)(aCpuRowPointer->spatialPart.key));
+                    l1->size = l2->size;
+                    l1->points = (float2*)(memoryValues + sizeof(gpudb::GpuLine));
+                    for (int i = 0; i < l2->size; i++) {
+                        l1->points[i] = l2->points[i];
+                    }
+                }
+                break;
+                case SpatialType::POLYGON:
+                {
+                    gpudb::GpuPolygon *p1 = ((gpudb::GpuPolygon*)(cpuRowPointer->spatialPart.key));
+                    gpudb::GpuPolygon *p2 = ((gpudb::GpuPolygon*)(aCpuRowPointer->spatialPart.key));
+                    p1->size = p2->size;
+                    p1->points = (float2*)(memoryValues + sizeof(gpudb::GpuPolygon));
+                    for (int i = 0; i < p2->size; i++) {
+                        p1->points[i] = p2->points[i];
+                    }
+                }
+                break;
+            }
+
+            cpuRowPointer->temporalPart.transactionTimeCode = aCpuRowPointer->temporalPart.transactionTimeCode;
+            cpuRowPointer->temporalPart.validTimeECode = aCpuRowPointer->temporalPart.validTimeECode;
+            cpuRowPointer->temporalPart.validTimeSCode = aCpuRowPointer->temporalPart.validTimeSCode;
+
+            DataBase::getInstance().storeGPU((gpudb::GpuRow*)resultRows[i], cpuRowPointer, resultTable->rowsSize[i]);
+            StackAllocator::getInstance().free(aRow);
+        }
+        sourceB.references.push_back(&resultTempTable);
+        resultTempTable.parents.push_back(&sourceB);
+
+        resultTempTable.table = resultTable;
+        resultTempTable.valid = true;
+        resultTempTable.description = tdescription;
+
+        StackAllocator::getInstance().popPosition();
+        gpudb::GpuStackAllocator::getInstance().popPosition();
+        return true;
+    } while(0);
+
+    error:
+    delete resultTable;
+    StackAllocator::getInstance().popPosition();
+    gpudb::GpuStackAllocator::getInstance().popPosition();
+    return false;
+}
+
+bool DataBase::resultToTempTable1(TempTable const &a, TempTable &b, std::string opname, uint *selectedRowsFromB, uint *selectedRowsSize, TempTable &resultTempTable) {
+    StackAllocator::getInstance().pushPosition();
+    gpudb::GpuStackAllocator::getInstance().pushPosition();
+
+    do {
+        gpudb::GpuTable **tables = StackAllocator::getInstance().alloc<gpudb::GpuTable*>(a.table->rows.size());
+        TempTable **newTempTables = StackAllocator::getInstance().alloc<TempTable*>(a.table->rows.size());
+
+        for (uint i = 0; i < a.table->rows.size(); i++) {
+            tables[i] = new gpudb::GpuTable;
+            newTempTables[i] = new TempTable;
+
+            resultTempTable.needToBeFree.push_back((uintptr_t)newTempTables[i]);
+
+            if (tables[i] == nullptr || newTempTables == nullptr) {
+                for (int j = 0; j <= i; j++) {
+                    if (tables[j]) {
+                        delete tables[j];
+                    }
+                    if (newTempTables[j]) {
+                        delete newTempTables[j];
+                    }
+                }
+
+                resultTempTable.needToBeFree.clear();
+                goto error;
+            }
+        }
+
+        thrust::host_vector<gpudb::GpuRow*> rows;
+        thrust::host_vector<gpudb::GpuRow*> brows = b.table->rows;
+
+        size_t j = 0;
+        for (size_t i = 0; i < a.table->rows.size(); i++) {
+
+            tables[i]->columns.reserve(a.table->columns.size());
+            tables[i]->bvh.builded = false;
+            tables[i]->columns = a.table->columns;
+
+            memcpy(tables[i]->name, a.table->name, NAME_MAX_LEN * sizeof(char));
+            tables[i]->rowReferenses = true;
+
+            if (selectedRowsSize[i] > 0) {
+                rows.resize(selectedRowsSize[i]);
+                tables[i]->rowsSize.resize(selectedRowsSize[i]);
+                tables[i]->rows.reserve(selectedRowsSize[i]);
+
+                for (size_t p = 0; p < selectedRowsSize[i]; p++, j++) {
+                    tables[i]->rowsSize[p] = b.table->rowsSize[selectedRowsFromB[j]];
+                    rows[p] = brows[selectedRowsFromB[j]];
+                }
+
+                tables[i]->rows = rows;
+            }
+        }
+
+        for (uint i = 0; i < a.table->rows.size(); i++) {
+            newTempTables[i]->description = b.description;
+            newTempTables[i]->valid = true;
+            newTempTables[i]->table = tables[i];
+        }
+
+        if (!resultToTempTable2(a, b, opname.c_str(), newTempTables, opname.c_str(), resultTempTable)) {
+            for (int j = 0; j < a.table->rows.size(); j++) {
+                if (tables[j]) {
+                    delete tables[j];
+                }
+            }
+            break;
+        }
+
+        StackAllocator::getInstance().popPosition();
+        gpudb::GpuStackAllocator::getInstance().popPosition();
+        return true;
+    } while (0);
+    error:
+    StackAllocator::getInstance().popPosition();
+    gpudb::GpuStackAllocator::getInstance().popPosition();
+    return false;
 }
 
 TempTable DataBase::linexpointPointsInBufferLine(TempTable const &a, TempTable &b, float radius) {
@@ -485,7 +778,8 @@ TempTable DataBase::linexpointPointsInBufferLine(TempTable const &a, TempTable &
         b.table == nullptr ||
         a.getSpatialKeyType() != SpatialType::LINE ||
         b.getSpatialKeyType() != SpatialType::POINT ||
-        radius <= 0.0001f) {
+        radius <= 0.0001f ||
+        a.table->rows.size() == 0 || b.table->rows.size() == 0) {
         return resultTempTable;
     }
 
@@ -520,7 +814,11 @@ TempTable DataBase::linexpointPointsInBufferLine(TempTable const &a, TempTable &
 
         uint *cpuPointsInsidePolygon = StackAllocator::getInstance().alloc<uint>(a.table->rows.size());
 
-        if (pointsInsideLineBuffer == nullptr || stack == nullptr || cpuPointsInsidePolygon == nullptr || cub_tmp_mem == nullptr || prefixSumPointsInsideLineBuffer == nullptr) {
+        if (pointsInsideLineBuffer == nullptr ||
+            stack == nullptr ||
+            cpuPointsInsidePolygon == nullptr ||
+            cub_tmp_mem == nullptr ||
+            prefixSumPointsInsideLineBuffer == nullptr) {
             break;
         }
 
@@ -538,11 +836,18 @@ TempTable DataBase::linexpointPointsInBufferLine(TempTable const &a, TempTable &
         uint allsize = 0;
         cudaMemcpy(&allsize, prefixSumPointsInsideLineBuffer + a.table->rows.size(), sizeof(uint), cudaMemcpyDeviceToHost);
 
+        gpudb::GpuStackAllocator::getInstance().free(cub_tmp_mem);
+        cub_tmp_mem = nullptr;
         uint *testedLineNum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
-        uint *testedResult = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+        uint *testedResult = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize + 1);
         uint *testedPointNum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+        uint *testedResultPrefixSum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize + 1);
 
-        if (testedLineNum == nullptr || testedResult == nullptr || testedPointNum == nullptr) {
+        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, testedResult, testedResultPrefixSum, allsize + 1);
+        cub_tmp_mem = gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(cub_tmp_memsize);
+
+        if (testedLineNum == nullptr || testedResult == nullptr ||
+            testedPointNum == nullptr || testedResultPrefixSum == nullptr || cub_tmp_mem == nullptr) {
             break;
         }
 
@@ -565,17 +870,59 @@ TempTable DataBase::linexpointPointsInBufferLine(TempTable const &a, TempTable &
                                                    thrust::raw_pointer_cast(b.table->rows.data()),
                                                    allsize, radius);
 
-        uint *cputestedLineNum = StackAllocator::getInstance().alloc<uint>(allsize);
+
+        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, testedResult, testedResultPrefixSum, allsize + 1);
+
+        uint totalRowsSelected = 0;
+        cudaMemcpy(&totalRowsSelected, testedResultPrefixSum + allsize, sizeof(uint), cudaMemcpyDeviceToHost);
+
+        uint *cpuselectedRows = nullptr;
+
+        if (totalRowsSelected > 0) {
+            uint *selectedRows = gpudb::GpuStackAllocator::getInstance().alloc<uint>(totalRowsSelected);
+            cpuselectedRows = StackAllocator::getInstance().alloc<uint>(totalRowsSelected);
+
+            if (selectedRows == nullptr || cpuselectedRows == nullptr) {
+                break;
+            }
+
+            dim3 grid = gridConfigure(allsize, block);
+            selector<<<grid, block>>>(selectedRows, testedPointNum, testedResult, testedResultPrefixSum, allsize);
+            cudaMemcpy(cpuselectedRows, selectedRows, sizeof(uint) * totalRowsSelected, cudaMemcpyDeviceToHost);
+            gpudb::GpuStackAllocator::getInstance().free(selectedRows);
+        }
+
+        grid = gridConfigure(a.table->rows.size(), block);
+        computeResultSize<<<grid, block>>>(pointsInsideLineBuffer, prefixSumPointsInsideLineBuffer, testedResultPrefixSum, a.table->rows.size());
+        computeResultSize2<<<grid, block>>>(pointsInsideLineBuffer, a.table->rows.size());
+
+        gpudb::GpuStackAllocator::getInstance().free(cub_tmp_mem);
+        gpudb::GpuStackAllocator::getInstance().free(testedResultPrefixSum);
+
+        uint *cputestedResultSize = StackAllocator::getInstance().alloc<uint>(a.table->rows.size());
+        cudaMemcpy(cputestedResultSize, pointsInsideLineBuffer, sizeof(uint) * a.table->rows.size(), cudaMemcpyDeviceToHost);
+
+        /*uint *cputestedLineNum = StackAllocator::getInstance().alloc<uint>(allsize);
         uint *cputestedResult = StackAllocator::getInstance().alloc<uint>(allsize);
         uint *cputestedPointNum = StackAllocator::getInstance().alloc<uint>(allsize);
         cudaMemcpy(cputestedLineNum, testedLineNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
         cudaMemcpy(cputestedResult, testedResult, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
         cudaMemcpy(cputestedPointNum, testedPointNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
 
+        for (int i = 0; i < a.table->rows.size(); i++) {
+            printf("%d ", cputestedResultSize[i]);
+        }
+        printf("\n");
+
         for (uint i = 0; i < allsize; i++) {
             printf("{ point : %d result : %d line : %d} \n", cputestedPointNum[i], cputestedResult[i], cputestedLineNum[i]);
-        }
+        }*/
+
+        resultToTempTable1(a, b, "Linebuffer operation result", cpuselectedRows, cputestedResultSize, resultTempTable);
     } while(0);
+    error:
+    gpudb::GpuStackAllocator::getInstance().popPosition();
+    StackAllocator::getInstance().popPosition();
     return resultTempTable;
 }
 
@@ -588,7 +935,8 @@ TempTable DataBase::polygonxpointPointsInPolygon(TempTable const &a, TempTable &
     if (a.table == nullptr ||
         b.table == nullptr ||
         a.getSpatialKeyType() != SpatialType::POLYGON ||
-        b.getSpatialKeyType() != SpatialType::POINT) {
+        b.getSpatialKeyType() != SpatialType::POINT ||
+        a.table->rows.size() == 0 || b.table->rows.size() == 0) {
         return resultTempTable;
     }
 
@@ -622,7 +970,11 @@ TempTable DataBase::polygonxpointPointsInPolygon(TempTable const &a, TempTable &
         cub_tmp_mem = gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(cub_tmp_memsize);
         uint *cpuPointsInsidePolygon = StackAllocator::getInstance().alloc<uint>(a.table->rows.size());
 
-        if (pointsInsidePolygon == nullptr || stack == nullptr || cpuPointsInsidePolygon == nullptr || cub_tmp_mem == nullptr || prefixSumPointsInsidePolygon == nullptr) {
+        if (pointsInsidePolygon == nullptr ||
+            stack == nullptr ||
+            cpuPointsInsidePolygon == nullptr ||
+            cub_tmp_mem == nullptr ||
+            prefixSumPointsInsidePolygon == nullptr) {
             break;
         }
 
@@ -638,12 +990,21 @@ TempTable DataBase::polygonxpointPointsInPolygon(TempTable const &a, TempTable &
         cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, pointsInsidePolygon, prefixSumPointsInsidePolygon, a.table->rows.size() + 1);
         uint allsize = 0;
         cudaMemcpy(&allsize, prefixSumPointsInsidePolygon + a.table->rows.size(), sizeof(uint), cudaMemcpyDeviceToHost);
+
+        gpudb::GpuStackAllocator::getInstance().free(cub_tmp_mem);
+        cub_tmp_mem = nullptr;
+
         // номер точки /результат тестирвования/номер полигона
         uint *testedPolygonNum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
-        uint *testedResult = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+        uint *testedResult = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize + 1);
         uint *testedPointNum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize);
+        uint *testedResultPrefixSum = gpudb::GpuStackAllocator::getInstance().alloc<uint>(allsize + 1);
 
-        if (testedPolygonNum == nullptr || testedResult == nullptr || testedPointNum == nullptr) {
+
+        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, testedResult, testedResultPrefixSum, allsize + 1);
+        cub_tmp_mem = gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(cub_tmp_memsize);
+
+        if (testedPolygonNum == nullptr || testedResult == nullptr || testedPointNum == nullptr || testedResultPrefixSum == nullptr || cub_tmp_mem == nullptr) {
             break;
         }
 
@@ -665,17 +1026,52 @@ TempTable DataBase::polygonxpointPointsInPolygon(TempTable const &a, TempTable &
                                                    thrust::raw_pointer_cast(b.table->rows.data()),
                                                    allsize);
 
-        uint *cputestedPolygonNum = StackAllocator::getInstance().alloc<uint>(allsize);
-        uint *cputestedResult = StackAllocator::getInstance().alloc<uint>(allsize);
-        uint *cputestedPointNum = StackAllocator::getInstance().alloc<uint>(allsize);
-        cudaMemcpy(cputestedPolygonNum, testedPolygonNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
-        cudaMemcpy(cputestedResult, testedResult, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
-        cudaMemcpy(cputestedPointNum, testedPointNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
-        for (uint i = 0; i < allsize; i++) {
-            printf("{ point : %d result : %d polygon : %d} \n", cputestedPointNum[i], cputestedResult[i], cputestedPolygonNum[i]);
+//        uint *cputestedPolygonNum = StackAllocator::getInstance().alloc<uint>(allsize);
+//        uint *cputestedResult = StackAllocator::getInstance().alloc<uint>(allsize);
+//        uint *cputestedPointNum = StackAllocator::getInstance().alloc<uint>(allsize);
+//        cudaMemcpy(cputestedPolygonNum, testedPolygonNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
+//        cudaMemcpy(cputestedResult, testedResult, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
+//        cudaMemcpy(cputestedPointNum, testedPointNum, allsize * sizeof(uint), cudaMemcpyDeviceToHost);
+//        for (uint i = 0; i < allsize; i++) {
+//            printf("{ point : %d result : %d polygon : %d} \n", cputestedPointNum[i], cputestedResult[i], cputestedPolygonNum[i]);
+//        }
+
+        cub::DeviceScan::ExclusiveSum(cub_tmp_mem, cub_tmp_memsize, testedResult, testedResultPrefixSum, allsize + 1);
+
+        uint totalRowsSelected = 0;
+        cudaMemcpy(&totalRowsSelected, testedResultPrefixSum + allsize, sizeof(uint), cudaMemcpyDeviceToHost);
+
+        uint *cpuselectedRows = nullptr;
+
+        if (totalRowsSelected > 0) {
+            uint *selectedRows = gpudb::GpuStackAllocator::getInstance().alloc<uint>(totalRowsSelected);
+            cpuselectedRows = StackAllocator::getInstance().alloc<uint>(totalRowsSelected);
+
+            if (selectedRows == nullptr || cpuselectedRows == nullptr) {
+                break;
+            }
+
+            dim3 grid = gridConfigure(allsize, block);
+            selector<<<grid, block>>>(selectedRows, testedPointNum, testedResult, testedResultPrefixSum, allsize);
+            cudaMemcpy(cpuselectedRows, selectedRows, sizeof(uint) * totalRowsSelected, cudaMemcpyDeviceToHost);
+            gpudb::GpuStackAllocator::getInstance().free(selectedRows);
         }
 
+        grid = gridConfigure(a.table->rows.size(), block);
+        computeResultSize<<<grid, block>>>(pointsInsidePolygon, prefixSumPointsInsidePolygon, testedResultPrefixSum, a.table->rows.size());
+        computeResultSize2<<<grid, block>>>(pointsInsidePolygon, a.table->rows.size());
+
+        gpudb::GpuStackAllocator::getInstance().free(cub_tmp_mem);
+        gpudb::GpuStackAllocator::getInstance().free(testedResultPrefixSum);
+
+        uint *cputestedResultSize = StackAllocator::getInstance().alloc<uint>(a.table->rows.size());
+        cudaMemcpy(cputestedResultSize, pointsInsidePolygon, sizeof(uint) * a.table->rows.size(), cudaMemcpyDeviceToHost);
+
+        resultToTempTable1(a, b, "Points inside Polygon operation result", cpuselectedRows, cputestedResultSize, resultTempTable);
     } while(0);
+    error:
+    gpudb::GpuStackAllocator::getInstance().popPosition();
+    StackAllocator::getInstance().popPosition();
     return resultTempTable;
 }
 
@@ -864,6 +1260,11 @@ TempTable DataBase::pointxpointKnearestNeighbor(TempTable const &a, TempTable &b
         return resultTempTable;
     }
 
+    if (a.table->rows.size() == 0 || b.table->rows.size() == 0) {
+        gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "table a or b is empty");
+        return resultTempTable;
+    }
+
     gpudb::GpuStackAllocator::getInstance().pushPosition();
     StackAllocator::getInstance().pushPosition();
 
@@ -908,166 +1309,19 @@ TempTable DataBase::pointxpointKnearestNeighbor(TempTable const &a, TempTable &b
                                           stackSize,
                                           k,
                                           a.table->rows.size());
-        cudaMemcpy(result, heapValues, sizeof(uint) * k * a.table->rows.size(), cudaMemcpyDeviceToHost);
         gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "k nearest neighbor in %d ms", t.elapsedMillisecondsU64());
+        cudaMemcpy(result, heapValues, sizeof(uint) * k * a.table->rows.size(), cudaMemcpyDeviceToHost);
+        uint *sizes = StackAllocator::getInstance().alloc<uint>(a.table->rows.size());
 
-        gpudb::GpuTable *tables[a.table->rows.size()];
-        TempTable *newTempTables[a.table->rows.size()];
-
-        gpudb::GpuTable *resultTable = new gpudb::GpuTable;
-
-        if (!resultTable) {
+        if (sizes == nullptr) {
             break;
         }
 
-        for (uint i = 0; i < a.table->rows.size(); i++) {
-            tables[i] = new gpudb::GpuTable;
-            newTempTables[i] = new TempTable;
-
-            resultTempTable.needToBeFree.push_back((uintptr_t)newTempTables[i]);
-
-            if (tables[i] == nullptr) {
-                for (int j = 0; j < i; j++) {
-                    delete tables[j];
-                    delete newTempTables[j];
-                }
-                resultTempTable.needToBeFree.clear();
-                goto error;
-            }
+        for (int i = 0; i < a.table->rows.size(); i++) {
+            sizes[i] = k;
         }
 
-        gpudb::GpuColumnAttribute atr;
-        std::snprintf(atr.name, NAME_MAX_LEN, "%d nearest neighbor set", k);
-        atr.type = Type::SET;
-
-        AttributeDescription desc;
-        desc.name.resize(NAME_MAX_LEN);
-        std::snprintf(&desc.name[0], NAME_MAX_LEN, "%d nearest neighbor set", k);
-        desc.type = Type::SET;
-
-        thrust::host_vector<gpudb::GpuRow*> rows;
-        thrust::host_vector<gpudb::GpuRow*> brows = b.table->rows;
-
-        rows.resize(k);
-        for (size_t i = 0; i < a.table->rows.size(); i++) {
-            tables[i]->columns.reserve(a.table->columns.size());
-            tables[i]->bvh.builded = false;
-            tables[i]->columns = a.table->columns;
-
-            memcpy(tables[i]->name, a.table->name, NAME_MAX_LEN * sizeof(char));
-            tables[i]->rowsSize.resize(k);
-            tables[i]->rows.reserve(k);
-            tables[i]->rowReferenses = true;
-            for (size_t j = i * k, p = 0; j < (i + 1) * k; j++, p++) {
-                tables[i]->rowsSize[p] = b.table->rowsSize[result[j]];
-                rows[p] = brows[result[j]];
-            }
-            tables[i]->rows = rows;
-        }
-
-        for (uint i = 0; i < a.table->rows.size(); i++) {
-            newTempTables[i]->description = b.description;
-            newTempTables[i]->valid = true;
-            newTempTables[i]->table = tables[i];
-        }
-
-        resultTable->bvh.builded = false;
-        std::snprintf(resultTable->name, NAME_MAX_LEN, "%d nearest neighbor", k);
-        resultTable->rows.reserve(a.table->rows.size());
-        resultTable->rowsSize.resize(a.table->rows.size());
-        resultTable->columns.reserve(a.table->columns.size() + 1);
-        resultTable->columns = a.table->columns;
-        resultTable->columns.push_back(atr);
-
-        TableDescription tdescription;
-        tdescription = a.description;
-        tdescription.columnDescription.push_back(desc);
-
-        uint8_t *resultRows[a.table->rows.size()];
-        uint8_t *cpuRows[a.table->rows.size()];
-
-        thrust::host_vector<gpudb::GpuRow*> hostRowsResult;
-        hostRowsResult.resize(a.table->rows.size());
-
-        for (uint i = 0; i < a.table->rows.size(); i++) {
-            uint64_t memsize = a.table->rowsSize[i] + sizeof(gpudb::Value) + typeSize(Type::SET);
-            resultTable->rowsSize[i] = memsize;
-            resultRows[i] = gpudb::gpuAllocator::getInstance().alloc<uint8_t>(memsize);
-            cpuRows[i] = StackAllocator::getInstance().alloc<uint8_t>(memsize);
-            hostRowsResult[i] = ((gpudb::GpuRow*)(resultRows[i]));
-            if (resultRows[i] == nullptr) {
-                for (int j = 0; j < i; j++) {
-                    gpudb::gpuAllocator::getInstance().free(resultRows[j]);
-                }
-                goto error;
-            }
-        }
-        resultTable->rows = hostRowsResult;
-
-        thrust::host_vector<gpudb::GpuRow*> hostRows = a.table->rows;
-        for (uint i = 0; i < a.table->rows.size(); i++) {
-            uint8_t *aRow = StackAllocator::getInstance().alloc<uint8_t>(a.table->rowsSize[i]);
-            DataBase::getInstance().loadCPU((gpudb::GpuRow*)aRow, hostRows[i], a.table->rowsSize[i]);
-            gpudb::GpuRow* cpuRowPointer = ((gpudb::GpuRow*)cpuRows[i]);
-            gpudb::GpuRow* aCpuRowPointer = ((gpudb::GpuRow*)aRow);
-            uintptr_t cpuRawPointer = (uintptr_t)cpuRows[i];
-            strncpy(cpuRowPointer->spatialPart.name, aCpuRowPointer->spatialPart.name, typeSize(Type::STRING));
-            cpuRowPointer->spatialPart.name[typeSize(Type::STRING) - 1] = 0;
-            strncpy(cpuRowPointer->temporalPart.name, aCpuRowPointer->temporalPart.name, typeSize(Type::STRING));
-            cpuRowPointer->temporalPart.name[typeSize(Type::STRING) - 1] = 0;
-
-            cpuRowPointer->spatialPart.type = aCpuRowPointer->spatialPart.type;
-            cpuRowPointer->temporalPart.type = a.description.temporalKeyType;
-            cpuRowPointer->valueSize = tdescription.columnDescription.size();
-            cpuRowPointer->value = (gpudb::Value*)(cpuRawPointer + sizeof(gpudb::GpuRow));
-
-            uintptr_t memoryValues = cpuRawPointer + sizeof(gpudb::GpuRow) + sizeof(gpudb::Value) * cpuRowPointer->valueSize;
-            for (uint j = 0; j < tdescription.columnDescription.size(); j++) {
-                cpuRowPointer->value[j].value = (void*)memoryValues;
-                if (j < a.description.columnDescription.size()) {
-                    cpuRowPointer->value[j].isNull = aCpuRowPointer->value[j].isNull;
-                } else {
-                    cpuRowPointer->value[j].isNull = false;
-                }
-
-                uint64_t attrSize = typeSize(tdescription.columnDescription[j].type);
-                if (j < a.description.columnDescription.size()) {
-                    memcpy(cpuRowPointer->value[j].value, aCpuRowPointer->value[j].value, attrSize);
-                } else {
-                    gpudb::GpuSet set;
-                    set.temptable = newTempTables[i];
-                    set.columns = thrust::raw_pointer_cast(newTempTables[i]->table->columns.data());
-                    set.rows = thrust::raw_pointer_cast(newTempTables[i]->table->rows.data());
-                    set.rowsSize = newTempTables[i]->table->rows.size();
-                    set.columnsSize = newTempTables[i]->table->columns.size();
-
-                    memcpy(cpuRowPointer->value[j].value, &set, attrSize);
-                }
-                memoryValues += attrSize;
-            }
-
-            cpuRowPointer->spatialPart.key = (void*)memoryValues;
-            ((gpudb::GpuPoint*) (cpuRowPointer->spatialPart.key))->p.x = ((gpudb::GpuPoint*)(aCpuRowPointer->spatialPart.key))->p.x;
-            ((gpudb::GpuPoint*) (cpuRowPointer->spatialPart.key))->p.y = ((gpudb::GpuPoint*)(aCpuRowPointer->spatialPart.key))->p.y;
-
-            cpuRowPointer->temporalPart.transactionTimeCode = aCpuRowPointer->temporalPart.transactionTimeCode;
-            cpuRowPointer->temporalPart.validTimeECode = aCpuRowPointer->temporalPart.validTimeECode;
-            cpuRowPointer->temporalPart.validTimeSCode = aCpuRowPointer->temporalPart.validTimeSCode;
-
-            DataBase::getInstance().storeGPU((gpudb::GpuRow*)resultRows[i], cpuRowPointer, resultTable->rowsSize[i]);
-            StackAllocator::getInstance().free(aRow);
-        }
-        b.references.push_back(&resultTempTable);
-        resultTempTable.parents.push_back(&b);
-
-        resultTempTable.table = resultTable;
-        resultTempTable.valid = true;
-        resultTempTable.description = tdescription;
-
-        gpudb::GpuStackAllocator::getInstance().popPosition();
-        StackAllocator::getInstance().popPosition();
-
-        return resultTempTable;
+        resultToTempTable1(a, b, "k nearest neighbor",result, sizes, resultTempTable);
     } while(0);
 
     error:

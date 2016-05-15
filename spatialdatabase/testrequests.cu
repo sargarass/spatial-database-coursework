@@ -4,8 +4,8 @@ using namespace gpudb;
 
 __device__
 bool tester(gpudb::CRow const &row) {
-    Date validS, validE;
-    row.getKeyValidTime(validS, validE);
+    Date validS = row.getKeyValidTimeStart();
+    Date validE = row.getKeyValidTimeEnd();
     return (validS.getYear() >= -21669);
 }
 

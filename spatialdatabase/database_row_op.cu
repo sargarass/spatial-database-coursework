@@ -357,6 +357,9 @@ bool DataBase::dropRowImp(gpudb::GpuTable *table, Predicate p, bool freeRowMemor
                 gpudb::gpuAllocator::getInstance().free(toDeleteCpu[i]);
             }
         }
+
+        table->bvh.free();
+
         gpudb::GpuStackAllocator::getInstance().popPosition();
         StackAllocator::getInstance().popPosition();
         return true;
@@ -918,6 +921,11 @@ bool DataBase::insertRow(std::string tableName, std::vector<Row> &rows) {
             gpudb::GpuStackAllocator::getInstance().free(stack);
             gpudb::GpuStackAllocator::getInstance().free(newRowAABB);
             gpudb::GpuStackAllocator::getInstance().free(newRowsPointers);
+
+            if (table->bvh.isBuilded()) {
+                table->bvh.free();
+            }
+
             uint allSize = 0;
             cudaMemcpy(&allSize, testResultPrefixSum + table->rows.size(), sizeof(uint), cudaMemcpyDeviceToHost);
             // в стеке у нас последний массив это newRowsPointers. К нему добавим выбранные элементы и посортируем
@@ -988,6 +996,11 @@ bool DataBase::insertRow(std::string tableName, std::vector<Row> &rows) {
         return true;
     } while(0);
     gpudb::GpuStackAllocator::getInstance().popPosition();
+
+    if (table->bvh.isBuilded()) {
+        table->bvh.free();
+    }
+
     for (uint j = 0; j < rows.size(); j++) {
         gpudb::gpuAllocator::getInstance().free(gpuRows[j]);
     }

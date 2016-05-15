@@ -76,6 +76,9 @@ public:
     TempTable linexpointPointsInBufferLine(TempTable const &a, TempTable &b, float radius);
 
 private:
+    bool resultToTempTable2(TempTable const &sourceA, TempTable &sourceB, std::string nameForNewTempTebles,
+                           TempTable **newTempTables, std::string nameForResultTempTable, TempTable &resultTempTable);
+    bool resultToTempTable1(TempTable const &a, TempTable &b, std::string opname, uint *selectedRowsFromB, uint *selectedRowsSize, TempTable &resultTempTable);
     gpudb::GpuRow *allocateRow(Row &row, TableDescription &desc, uint64_t &growMemSize);
     bool validateRow(Row &row, TableDescription &desc);
     bool hashDataBaseFile(FILE *file, FileDescriptor &desc);

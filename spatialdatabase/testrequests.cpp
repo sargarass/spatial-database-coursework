@@ -4,17 +4,17 @@ void test() {
     DataBase &db = DataBase::getInstance();
     std::cout << db.loadFromDisk("/home/sargarass/tmp/db/test.sdata") << std::endl;
 
-   /* TableDescription table;
+    TableDescription table;
     table.setName("test1");
     table.setSpatialKey("Точка", SpatialType::POINT);
-    table.setTemporalKey("Время", TemporalType::VALID_TIME);*/
+    table.setTemporalKey("Время", TemporalType::VALID_TIME);
     AttributeDescription desc;
     desc.name = "col";
     desc.type = Type::REAL;
-    //table.addColumn(desc);
+    table.addColumn(desc);
     desc.type = Type::STRING;
     desc.name = "col2";
-    //table.addColumn(desc);
+    table.addColumn(desc);
 
     Date date;
     date.set(2016, 12, 31, 5, 23, 48, 453789);
@@ -85,7 +85,7 @@ void test() {
     }
 */
 
-   /* table.setName("test2");
+    /*table.setName("test2");
     table.setSpatialKey("Полигонъ", SpatialType::POLYGON);
     db.createTable(table);
 
@@ -95,7 +95,8 @@ void test() {
     newRow.spatialKey.points.push_back(make_float2(0.0, 10));
     newRow.spatialKey.points.push_back(make_float2(-1.0, 0.0));
     newRow.spatialKey.name = "Полигонъ";
-    newRow.spatialKey.type = SpatialType::POLYGON;*/
+    newRow.spatialKey.type = SpatialType::POLYGON;
+    db.insertRow("test2", newRow);
 
     //db.insertRow("test2", newRow);
     db.showTable("test1");
@@ -104,11 +105,11 @@ void test() {
     atr.setValue(4542.5489);
     atrSet.insert(atr2);
     atrSet.insert(atr);
-
+*/
 
     Predicate p = getTesterPointer();
     //db.showTable("test1");
-
+/*
     db.dropTable("test3");
 
     TableDescription lineTable;
@@ -131,13 +132,27 @@ void test() {
     newRow.spatialKey.points.push_back(make_float2(7.0, 6.0));
     newRow.spatialKey.name = "Линия";
     newRow.spatialKey.type = SpatialType::LINE;
-    //db.insertRow("test3", newRow);
-    db.showTable("test1");
+    db.insertRow("test3", newRow);
+    newRow.spatialKey.points.clear();
+    newRow.spatialKey.points.push_back(make_float2(0.0, -20.0));
+    newRow.spatialKey.points.push_back(make_float2(0.0, -25.0));
+    newRow.spatialKey.points.push_back(make_float2(-7.0, -25.0));
+    newRow.spatialKey.name = "Линия";
+    newRow.spatialKey.type = SpatialType::LINE;
+    db.insertRow("test3", newRow);
 
+    newRow.spatialKey.points.clear();
+    newRow.spatialKey.points.push_back(make_float2(0.0, 1.0));
+    newRow.spatialKey.points.push_back(make_float2(0.0, 5.0));
+    newRow.spatialKey.points.push_back(make_float2(-7.0, 5.0));
+    newRow.spatialKey.name = "Линия";
+    newRow.spatialKey.type = SpatialType::LINE;
+    db.insertRow("test3", newRow);
+*/
     TempTable temptable1, temptable2, temptable3;
-    //std::cout << db.selectTable("test1", temptable1) << std::endl;
-    //std::cout << db.selectTable("test2", temptable2) << std::endl;
-    //std::cout << db.selectTable("test3", temptable3) << std::endl;
+    db.selectTable("test1", temptable1);
+    db.selectTable("test2", temptable2);
+    db.selectTable("test3", temptable3);
 
    /* std::vector<Row> selected;
     db.selectRow(temptable1, p, selected);
@@ -180,9 +195,21 @@ void test() {
 //   // db.showTable("test1");
 
 // //   TempTable temptable5;
-//  //  db.selectTable("test2", temptable3);
-//    db.linexpointPointsInBufferLine(temptable3, temptable1, 1.0f);
-//    TempTable &&temptable4 = db.pointxpointKnearestNeighbor(temptable1, temptable1, 24);
+    //db.selectTable("test2", temptable2);
+   // db.selectTable("test3", temptable3);
+    db.showTable("test2");
+
+    TempTable &&temptable5 = db.pointxpointKnearestNeighbor(temptable1, temptable1, 24);
+    db.showTable(temptable5);
+
+    TempTable &&temptable4 = db.linexpointPointsInBufferLine(temptable3, temptable1, 1.0f);
+    db.showTable(temptable4);
+
+    TempTable &&temptable6 = db.polygonxpointPointsInPolygon(temptable2, temptable1);
+    db.showTable(temptable6);
+
+    TempTable &&temptable7 = db.polygonxpointPointsInPolygon(temptable6, temptable1);
+    db.showTable(temptable7);
 
 //    std::vector<Row> selected;
 //    db.selectRow(temptable4, p, selected);
