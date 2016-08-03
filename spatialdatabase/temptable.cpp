@@ -48,23 +48,6 @@ TempTable::TempTable() {
     this->valid = false;
 }
 
-void TempTable::operator=(TempTable &t) {
-    if (this->table) {
-        deinit();
-    }
-
-    std::swap(this->description, t.description);
-    std::swap(this->table, t.table);
-    std::swap(this->needToBeFree, t.needToBeFree);
-    std::swap(this->parents, t.parents);
-    std::swap(this->references, t.references);
-    std::swap(this->valid, t.valid);
-}
-
-TempTable::TempTable(TempTable &table) {
-    *this = table;
-}
-
 SpatialType TempTable::getSpatialKeyType() const {
     if (this->table == nullptr) {
         return SpatialType::UNKNOWN;

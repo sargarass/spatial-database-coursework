@@ -238,6 +238,16 @@ Date::Date() {
     init = 0;
 }
 
+Date Date::getRandomDate(Date const &start, Date const &end) {
+    Date res;
+    if (start.isValid() && end.isValid() && start.codeDate() <= end.codeDate()) {
+        double d = ((double)rand()) / ((double)RAND_MAX);
+        uint64_t u = d * (end.codeDate() - start.codeDate()) + start.codeDate();
+        res.setFromCode(u);
+    }
+    return res;
+}
+
 Date Date::getRandomDate() {
     Date res;
     uint64_t u = ((double)rand()) / (double)(RAND_MAX) * MAX_CODE;
@@ -246,7 +256,7 @@ Date Date::getRandomDate() {
 }
 
 FUNC_PREFIX
-uint64_t Date::codeDate() {
+uint64_t Date::codeDate() const {
     if (!isValid()) {
         return 0xFFFFFFFFFFFFFFFFULL;
     }

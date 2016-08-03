@@ -11,27 +11,28 @@ public:
     ~Attribute();
     void operator=(Attribute const &c);
     Attribute(Attribute const &c);
-    bool setName(std::string name);
+    Result<void, Error<std::string>> setName(std::string name);
+
     std::string getName() const;
     bool isNull() const;
     Type getType() const;
-    std::string getString() const;
-    int64_t getInt() const;
-    double getReal() const;
-    TempTable *getSet() const;
+    Result<std::string, Error<std::string>> getString() const;
+    Result<int64_t, Error<std::string>> getInt() const;
+    Result<double, Error<std::string>> getReal() const;
+    Result<std::unique_ptr<TempTable>, Error<std::string>> getSet() const;
 
     template<typename T>
-    bool setValue(T val = T()) {
+    Result<void, Error<std::string>> setValue(T val = T()) {
         UNUSED_PARAM_HANDLER(val);
-        return false;
+        return MYERR_STRING("unsupported T type");
     }
 
-    bool setNullValue(Type t);
+    Result<void, Error<std::string>> setNullValue(Type t);
 
     bool operator<(Attribute const &b) const;
     bool operator==(Attribute const &b) const;
 private:
-    bool setValueImp(Type t, void const *val);
+    Result<void, Error<std::string>> setValueImp(Type t, void const *val);
 
     std::string name;
     Type type;
@@ -79,27 +80,27 @@ public:
     SpatialKey spatialKey;
     TemportalKey temporalKey;
 
-    bool addAttribute(Attribute const& atr) {
+    Result<void, Error<std::string>> addAttribute(Attribute const& atr) {
         if (std::find(values.begin(), values.end(), atr) != values.end()) {
-            return false;
+            return MYERR_STRING(std::string("atr with same name already inside"));
         }
 
         values.push_back(atr);
-        return true;
+        return Ok();
     }
 
-    bool delAttribute(std::string const &atr) {
+    Result<void, Error<std::string>> delAttribute(std::string const &atr) {
         Attribute tmp;
-        if (!tmp.setName(atr)) {
-            return false;
-        }
+        TRY(tmp.setName(atr));
+
         auto found = std::find(values.begin(), values.end(), tmp);
+
         if (found == values.end()) {
-            return false;
+            return MYERR_STRING(string_format("atr with name %s is not exist", atr.c_str()));
         }
 
         values.erase(found);
-        return true;
+        return Ok();
     }
 
     uint getAttributeSize() {
@@ -119,26 +120,22 @@ protected:
 };
 
 template<>
-bool Attribute::setValue(int64_t const val);
+Result<void, Error<std::string>> Attribute::setValue(int64_t const val);
 template<>
-bool Attribute::setValue(int32_t const val);
+Result<void, Error<std::string>> Attribute::setValue(int32_t const val);
 template<>
-bool Attribute::setValue(uint32_t const val);
+Result<void, Error<std::string>> Attribute::setValue(uint32_t const val);
 template<>
-bool Attribute::setValue(uint64_t const val);
+Result<void, Error<std::string>> Attribute::setValue(uint64_t const val);
 template<>
-bool Attribute::setValue(float const val);
+Result<void, Error<std::string>> Attribute::setValue(float const val);
 template<>
-bool Attribute::setValue(double const val);
+Result<void, Error<std::string>> Attribute::setValue(double const val);
 template<>
-bool Attribute::setValue(std::string const &val);
+Result<void, Error<std::string>> Attribute::setValue(std::string const &val);
 template<>
-bool Attribute::setValue(std::string val);
+Result<void, Error<std::string>> Attribute::setValue(std::string val);
 template<>
-bool Attribute::setValue(char *val);
+Result<void, Error<std::string>> Attribute::setValue(char const *val);
 template<>
-bool Attribute::setValue(char const *val);
-template<>
-bool Attribute::setValue(Date const &date);
-template<>
-bool Attribute::setValue(Date const date);
+Result<void, Error<std::string>> Attribute::setValue(Date const &date);

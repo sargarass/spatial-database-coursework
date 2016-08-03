@@ -50,9 +50,10 @@ namespace gpudb {
                 return false;
             }
 
-            while(m_alloced.back() == GpuStackBoarder) {
+            while(!m_alloced.empty() && m_alloced.back() == GpuStackBoarder) {
                 m_alloced.pop_back();
             }
+
             if (!m_alloced.empty()) {
                 uint64_t size = m_alloced.back();
                 uint64_t offset = GpuAlignSize - 1;
@@ -80,4 +81,34 @@ namespace gpudb {
         uintptr_t m_memory;
         uintptr_t m_top;
     };
+
+    namespace GpuStackAllocatorAdditions {
+        template<typename T>
+        void free(T *handle) {
+            GpuStackAllocator::getInstance().free(handle);
+        }
+
+        template<typename T>
+        void freeNULL(T *handle) {}
+
+        template<typename T>
+        T* alloc1(uint64_t count) {
+            return GpuStackAllocator::getInstance().alloc<T>(count);
+        }
+
+        template<typename T>
+        std::unique_ptr<T, void(*)(T *)> allocUnique(uint64_t count = 1) {
+            return std::move(std::unique_ptr<T, void(*)(T *)>(alloc1<T>(count), GpuStackAllocatorAdditions::free<T>));
+        }
+
+        template<typename T>
+        std::shared_ptr<T> allocShared(uint64_t count = 1) {
+            return std::move(std::shared_ptr<T>(alloc1<T>(count), GpuStackAllocatorAdditions::free<T>));
+        }
+
+        template<typename T>
+        std::unique_ptr<T, void(*)(T *)> allocUniqueNull() {
+            return std::move(std::unique_ptr<T, void(*)(T *)>(nullptr, GpuStackAllocatorAdditions::freeNULL<T>));
+        }
+    }
 }

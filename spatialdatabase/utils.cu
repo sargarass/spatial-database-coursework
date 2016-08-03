@@ -1,6 +1,5 @@
 #include "utils.h"
 
-
 __device__
 uint getGlobalIdx3DZXY()
 {

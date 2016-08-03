@@ -28,23 +28,6 @@ namespace gpudb {
             return s;
         }
 
-        std::string toStringGPU() {
-            std::string s;
-            uint64_t llow = low;
-            uint64_t lhigh = high;
-
-            for (int i = 63; i >= 0; i--) {
-                s += ((lhigh & 0x8000000000000000ULL) >> 63ULL) + '0';
-                lhigh <<= 1;
-            }
-            s += " ";
-            for (int i = 63; i >= 0; i--) {
-                s += ((llow & 0x8000000000000000ULL) >> 63ULL) + '0';
-                llow <<= 1;
-            }
-            return s;
-        }
-
         FUNC_PREFIX
         bool operator<(MortonCode const &m) const {
             if (high < m.high) {

@@ -1,53 +1,53 @@
 #include "tabledescription.h"
 
-bool TableDescription::setName(std::string newName) {
+Result<void, Error<std::string>> TableDescription::setName(std::string newName) {
     if (newName.length() > NAME_MAX_LEN) {
-        return false;
+        return MYERR_STRING(string_format("newName len %d is great than %d", newName.length(), NAME_MAX_LEN));
     }
 
     name = newName;
-    return true;
+    return Ok();
 }
 
-bool TableDescription::setSpatialKey(std::string const keyName, SpatialType keyType) {
+Result<void, Error<std::string>> TableDescription::setSpatialKey(std::string const keyName, SpatialType keyType) {
     if (keyName.length() > NAME_MAX_LEN) {
-        return false;
+        return MYERR_STRING((string_format("KeyName len %d is great than %d", keyName.length(), NAME_MAX_LEN)));
     }
 
     spatialKeyName = keyName;
     spatialKeyType = keyType;
-    return true;
+    return Ok();
 }
 
-bool TableDescription::setTemporalKey(std::string const keyName, TemporalType keyType) {
+Result<void, Error<std::string>> TableDescription::setTemporalKey(std::string const keyName, TemporalType keyType) {
     if (keyName.length() > NAME_MAX_LEN) {
-        return false;
+        return MYERR_STRING(string_format("KeyName len %d is great than %d", keyName.length(), NAME_MAX_LEN));
     }
 
     temporalKeyName = keyName;
     temporalKeyType = keyType;
-    return true;
+    return Ok();
 }
 
-bool TableDescription::addColumn(AttributeDescription col) {
+Result<void, Error<std::string>> TableDescription::addColumn(AttributeDescription col) {
     auto it = std::find(columnDescription.begin(), columnDescription.end(), col);
 
     if (it != columnDescription.end()) {
-        return false;
+        return MYERR_STRING("Col is already exist");
     }
 
     columnDescription.push_back(col);
-    return true;
+    return Ok();
 }
 
-bool TableDescription::delColumn(AttributeDescription col) {
+Result<void, Error<std::string>> TableDescription::delColumn(AttributeDescription col) {
     auto it = std::find(columnDescription.begin(), columnDescription.end(), col);
 
     if (it == columnDescription.end()) {
-        return false;
+        return MYERR_STRING("Col was not found");
     }
     columnDescription.erase(it);
-    return true;
+    return Ok();
 }
 
 bool TableDescription::operator<(TableDescription const &b) const {

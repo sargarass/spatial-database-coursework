@@ -58,25 +58,28 @@ switch(spatialtype) { \
 }
 
 namespace gpudb {
-    struct GpuColumnAttribute {
-        char name[NAME_MAX_LEN];
-        Type type;
-
+    struct __align__(16) GpuColumnAttribute {
         FUNC_PREFIX
-
         GpuColumnAttribute() {}
-        FUNC_PREFIX
 
+        FUNC_PREFIX
+        ~GpuColumnAttribute() {}
+
+        FUNC_PREFIX
         GpuColumnAttribute(GpuColumnAttribute const &atr) {
             *this = atr;
         }
 
         FUNC_PREFIX
-        void operator=(GpuColumnAttribute const &b) {
+        GpuColumnAttribute &operator=(GpuColumnAttribute const &b) {
             type = b.type;
             memcpy(name, b.name, NAME_MAX_LEN);
             name[NAME_MAX_LEN - 1] = 0;
+            return *this;
         }
+
+        char name[NAME_MAX_LEN];
+        Type type;
     };
 
     struct  __align__(16) GpuLine {
@@ -140,17 +143,25 @@ namespace gpudb {
     };
 
     struct  __align__(16) GpuRow {
-        SpatialKey spatialPart;
-        TemporalKey temporalPart;
-        Value *value;
-        uint64_t valueSize;
+        FUNC_PREFIX
+        GpuRow() {}
 
-        void operator=(GpuRow const &b) {
+        FUNC_PREFIX
+        ~GpuRow() {}
+
+        FUNC_PREFIX
+        GpuRow &operator=(GpuRow const &b) {
             spatialPart = b.spatialPart;
             temporalPart = b.temporalPart;
             value = b.value;
             valueSize = b.valueSize;
+            return *this;
         }
+
+        SpatialKey spatialPart;
+        TemporalKey temporalPart;
+        Value *value;
+        uint64_t valueSize;
     };
 
     struct __align__(16) GpuSet {
@@ -171,9 +182,9 @@ namespace gpudb {
         thrust::device_vector<GpuColumnAttribute> columns;
         thrust::device_vector<GpuRow*> rows;
         std::vector<uint64_t> rowsSize;
-        bool set(TableDescription table);
-        bool setName(char *dst, std::string const &src);
-        bool insertRow(TableDescription &descriptor, gpudb::GpuRow*  row, uint64_t memsize);
+        Result<void, Error<std::string>> set(TableDescription table);
+        Result<void, Error<std::string>> setName(char *dst, std::string const &src);
+        Result<void, Error<std::string>> insertRow(TableDescription &descriptor, gpudb::GpuRow*  row, uint64_t memsize);
     };
 }
 

@@ -6,7 +6,7 @@
 #include "row.h"
 #include "temptable.h"
 #include "constobjects.h"
-
+#include "filter.h"
 #pragma pack(push, 1)
 /*
  * FileDescriptor
@@ -41,59 +41,90 @@ struct RowChunk {
     uint32_t rowSize;
 };
 
+
+template<typename CPUClass>
+struct RAII_GC {
+    void registrCPU(CPUClass *ptr) {
+        cpuMemory.push_back(ptr);
+    }
+
+    void registrGPU(void *ptr) {
+        gpuMemory.push_back(ptr);
+    }
+
+    void takeGPU() {
+        cpuMemory.clear();
+    }
+
+    void takeCPU() {
+        gpuMemory.clear();
+    }
+
+    ~RAII_GC() {
+        for (CPUClass *v : cpuMemory) {
+            delete v;
+        }
+
+        for (void *v : gpuMemory) {
+            gpudb::gpuAllocator::getInstance().free(v);
+        }
+    }
+
+    std::list<CPUClass *> cpuMemory;
+    std::list<void*> gpuMemory;
+};
+
 #pragma pack(pop)
 
-typedef bool(*Predicate)(gpudb::CRow const &);
 
 class DataBase : public Singleton {
     typedef std::pair<std::string, TableDescription> tablesTypePair;
     typedef std::pair<std::string, gpudb::GpuTable*> tablesPair;
 public:
-    bool loadFromDisk(std::string path);
-    bool saveOnDisk(std::string path);
-    bool selectRow(std::string tableName, Predicate p, std::vector<Row> &result);
-    bool selectRow(TempTable &table, Predicate p, std::vector<Row> &result);
-    bool insertTable(TempTable &table, std::string tableName);
-    bool insertRow(std::string tableName, std::vector<Row> &rows);
-    bool insertRow(std::string tableName, Row &row);
-    bool createTable(TableDescription table);
-    bool showTable(std::string tableName);
-    bool showTable(TempTable &t);
-    bool showTableHeader(std::string tableName);
-    bool showTableHeader(TempTable &t);
-    bool selectTable(std::string tableName, TempTable &table);
-    bool update(std::string tableName, std::set<Attribute> const &atrSet, Predicate p);
-    bool update(TempTable &t, std::set<Attribute> const &atrSet, Predicate p);
-    bool dropRow(std::string tableName, Predicate p);
-    bool dropRow(TempTable &t, Predicate p);
-    bool dropTable(std::string tableName);
+    Result<void, Error<std::string>> loadFromDisk(std::string path);
+    Result<void, Error<std::string>> saveOnDisk(std::string path);
+    Result<std::vector<Row>, Error<std::string>> selectRow(std::string tableName, Predicate p);
+    Result<std::vector<Row>, Error<std::string>> selectRow(std::unique_ptr<TempTable> &table, Predicate p);
+    Result<std::unique_ptr<TempTable>, Error<std::string>> selectTable(std::string tableName);
+    Result<void, Error<std::string>> insertRow(std::string tableName, std::vector<Row> &rows);
+    Result<void, Error<std::string>> insertRow(std::string tableName, Row &row);
+    Result<void, Error<std::string>> createTable(TableDescription table);
+    Result<void, Error<std::string>> showTable(std::string tableName);
+    Result<void, Error<std::string>> showTable(std::unique_ptr<TempTable> const &t);
+    Result<void, Error<std::string>> showTableHeader(std::string tableName);
+    Result<void, Error<std::string>> showTableHeader(std::unique_ptr<TempTable> const &t);
+    Result<void, Error<std::string>> update(std::string tableName, std::set<Attribute> const &atrSet, Predicate p);
+    Result<void, Error<std::string>> update(std::unique_ptr<TempTable> &t, std::set<Attribute> const &atrSet, Predicate p);
+    Result<void, Error<std::string>> dropRow(std::string tableName, Predicate p);
+    Result<void, Error<std::string>> dropRow(std::unique_ptr<TempTable> &t, Predicate p);
+    Result<void, Error<std::string>> dropTable(std::string tableName);
 
     static DataBase &getInstance();
     void deinit();
     virtual ~DataBase();
-    TempTable pointxpointKnearestNeighbor(TempTable const &a, TempTable &b, uint k);
-    TempTable polygonxpointPointsInPolygon(TempTable const &a, TempTable &b);
-    TempTable linexpointPointsInBufferLine(TempTable const &a, TempTable &b, float radius);
+    Result<std::unique_ptr<TempTable>, Error<std::string>> pointxpointKnearestNeighbor(std::unique_ptr<TempTable> const &a, std::unique_ptr<TempTable> &b, uint k);
+    Result<std::unique_ptr<TempTable>, Error<std::string>> polygonxpointPointsInPolygon(std::unique_ptr<TempTable> const &a, std::unique_ptr<TempTable> &b);
+    Result<std::unique_ptr<TempTable>, Error<std::string>> linexpointPointsInBufferLine(std::unique_ptr<TempTable> const &a, std::unique_ptr<TempTable> &b, float radius);
 
 private:
-    bool resultToTempTable2(TempTable const &sourceA, TempTable &sourceB, std::string nameForNewTempTebles,
-                           TempTable **newTempTables, std::string nameForResultTempTable, TempTable &resultTempTable);
-    bool resultToTempTable1(TempTable const &a, TempTable &b, std::string opname, uint *selectedRowsFromB, uint *selectedRowsSize, TempTable &resultTempTable);
-    gpudb::GpuRow *allocateRow(Row &row, TableDescription &desc, uint64_t &growMemSize);
-    bool validateRow(Row &row, TableDescription &desc);
-    bool hashDataBaseFile(FILE *file, FileDescriptor &desc);
-    bool selectRowImp(TableDescription &desc, gpudb::GpuTable *table, Predicate p, std::vector<Row> &result);
-    bool updateImp(TableDescription &desc, gpudb::GpuTable *table, std::set<Attribute> const &atrSet, Predicate p);
-    bool showTableImp(gpudb::GpuTable const &table, const TableDescription &description, uint tabs =0);
-    bool showTableHeaderImp(gpudb::GpuTable const &table, const TableDescription &description);
-    bool dropRowImp(gpudb::GpuTable *table, Predicate p, bool freeRowMemory);
+    Result<std::unique_ptr<TempTable>, Error<std::string>> resultToTempTable2(std::unique_ptr<TempTable> const &sourceA, std::unique_ptr<TempTable> &sourceB, std::string nameForNewTempTebles,
+                           TempTable **newTempTables, std::string nameForResultTempTable);
+    Result<std::unique_ptr<TempTable>, Error<std::string>> resultToTempTable1(std::unique_ptr<TempTable> const &a, std::unique_ptr<TempTable> &b, std::string opname, uint *selectedRowsFromB, uint *selectedRowsSize);
+    Result<gpudb::GpuRow *, Error<std::string>> allocateRow(Row &row, TableDescription &desc, uint64_t &growMemSize);
+    Result<void, Error<std::string>> validateRow(Row &row, TableDescription &desc);
+    Result<void, Error<std::string>> hashDataBaseFile(FILE *file, FileDescriptor &desc);
+    Result<std::vector<Row>, Error<std::string>> selectRowImp(TableDescription &desc, gpudb::GpuTable *table, Predicate p);
+    Result<void, Error<std::string>> updateImp(TableDescription &desc, gpudb::GpuTable *table, std::set<Attribute> const &atrSet, Predicate p);
+    void showTableImp(gpudb::GpuTable const &table, const TableDescription &description, uint tabs =0);
+    void showTableHeaderImp(gpudb::GpuTable const &table, const TableDescription &description);
+    Result<void, Error<std::string>> dropRowImp(gpudb::GpuTable *table, Predicate p, bool freeRowMemory);
 
     static void store(gpudb::GpuRow * const dst, gpudb::GpuRow * const src);
     static void load(gpudb::GpuRow * const dst, gpudb::GpuRow * const src);
     static void storeGPU(gpudb::GpuRow *dst, gpudb::GpuRow *src, uint64_t memsize);
     static void loadCPU(gpudb::GpuRow *dstCPU, gpudb::GpuRow *srcGPU, uint64_t memsize);
-    static bool copyTempTable(TableDescription const &description, gpudb::GpuTable const *gpuTable, TempTable &table);
-    static void myprintf(uint tabs, char *format ...);
+    static Result<std::unique_ptr<TempTable>, Error<std::string>> copyTempTable(TableDescription const &description, gpudb::GpuTable const *gpuTable);
+    static void myprintf(uint tabs, const char *format ...);
     DataBase();
     std::map<std::string, gpudb::GpuTable*> tables;
     std::map<std::string, TableDescription> tablesType;

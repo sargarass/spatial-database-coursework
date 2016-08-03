@@ -4,7 +4,7 @@ namespace gpudb {
     class GpuTable;
 }
 class TempTable;
-
+class DataBase;
 
 class AttributeDescription {
     friend class gpudb::GpuTable;
@@ -21,8 +21,6 @@ public:
     }
 };
 
-class DataBase;
-
 class TableDescription {
     friend class DataBase;
     friend class gpudb::GpuTable;
@@ -35,10 +33,10 @@ class TableDescription {
     std::vector<AttributeDescription> columnDescription;
     uint64_t getRowMemoryValuesSize();
 public:
-    bool setName(std::string newName);
-    bool setSpatialKey(std::string const keyName, SpatialType keyType);
-    bool setTemporalKey(std::string const keyName, TemporalType keyType);
-    bool addColumn(AttributeDescription col);
-    bool delColumn(AttributeDescription col);
+    Result<void, Error<std::string>> setName(std::string newName);
+    Result<void, Error<std::string>> setSpatialKey(std::string const keyName, SpatialType keyType);
+    Result<void, Error<std::string>> setTemporalKey(std::string const keyName, TemporalType keyType);
+    Result<void, Error<std::string>> addColumn(AttributeDescription col);
+    Result<void, Error<std::string>> delColumn(AttributeDescription col);
     bool operator<(TableDescription const &b) const;
 };

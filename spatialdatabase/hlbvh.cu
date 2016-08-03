@@ -543,37 +543,20 @@ void refitBoxes(gpudb::HLBVH &hlbvh, gpudb::AABB *aabb, uint *offset) {
 /// } Refit boxes
 /////////////////////////////////////////////
 
-bool gpudb::HLBVH::build(AABB *aabb, uint32_t size) {
-    if (size == 0) { return false; }
-    gpudb::GpuStackAllocator &gpuStackAlloc = gpudb::GpuStackAllocator::getInstance();
+Result<void, Error<std::string>> gpudb::HLBVH::build(AABB *aabb, uint32_t size) {
+    if (size == 0) { return MYERR_STRING("size == 0"); }
     if (alloc(size) == false) {
-        return false;
+        return MYERR_STRING("cannot alloc gpu memory");
     }
-
-    StackAllocator::getInstance().pushPosition();
-    gpuStackAlloc.pushPosition();
-    do {
-        AABB globalAABB;
-        if (!computeGlobalAABB(aabb, size, globalAABB)) { break; }
-        MortonCode *keys = gpuStackAlloc.alloc<MortonCode>(size);
-        uint *offset = StackAllocator::getInstance().alloc<uint>(400);
-
-        if (keys == nullptr || offset == nullptr) { break; }
-        computeMortonCodesAndReference(keys, references, aabb, globalAABB, size);
-
-        if (!sortMortonCodes(keys, references, size)) { break; }
-        if (!buildTreeStructure(*this, 1, keys, offset, size)) { break; }
-
-        refitBoxes(*this, aabb, offset);
-        gLogWrite(LOG_MESSAGE_TYPE::DEBUG, "end hlbvh build");
-
-        StackAllocator::getInstance().popPosition();
-        gpuStackAlloc.popPosition();
-        builded = true;
-        return true;
-    } while(0);
-    gLogWrite(LOG_MESSAGE_TYPE::ERROR, "not enough memory");
-    StackAllocator::getInstance().popPosition();
-    gpuStackAlloc.popPosition();
-    return false;
+    AABB globalAABB;
+    if (!computeGlobalAABB(aabb, size, globalAABB)) { return MYERR_STRING("computeGlobalAABB error()"); }
+    auto keys = GpuStackAllocatorAdditions::allocUnique<MortonCode>(size);
+    auto offset = StackAllocatorAdditions::allocUnique<uint>(400);
+    if (keys == nullptr || offset == nullptr) { return MYERR_STRING("not enough stack memory"); }
+    computeMortonCodesAndReference(keys.get(), references, aabb, globalAABB, size);
+    if (!sortMortonCodes(keys.get(), references, size)) { return MYERR_STRING("sortMortonCodes error"); }
+    if (!buildTreeStructure(*this, 1, keys.get(), offset.get(), size)) { return MYERR_STRING("buildTreeStructure error"); }
+    refitBoxes(*this, aabb, offset.get());
+    builded = true;
+    return Ok();
 }

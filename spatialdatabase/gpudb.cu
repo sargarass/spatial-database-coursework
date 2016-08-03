@@ -88,41 +88,36 @@ void gpudb::TemporalKey::boundingBox(AABB *box) {
     }
 }
 
-bool gpudb::GpuTable::setName(char *dst, std::string const &src) {
+Result<void, Error<std::string>> gpudb::GpuTable::setName(char *dst, std::string const &src) {
     if (src.length() > NAME_MAX_LEN) {
-       gLogWrite(LOG_MESSAGE_TYPE::ERROR, "input string length is greater than NAME_MAX_LEN");
-       return false;
+       return MYERR_STRING("input string length is greater than NAME_MAX_LEN");
     }
 
     std::memcpy(dst, src.c_str(), typeSize(Type::STRING));
     name[typeSize(Type::STRING) - 1] = 0;
-    return true;
+
+    return Ok();
 }
 
-bool gpudb::GpuTable::set(TableDescription table) {
-    if (!setName(this->name, table.name)) {
-        return false;
-    }
+Result<void, Error<std::string>> gpudb::GpuTable::set(TableDescription table) {
+    TRY(setName(this->name, table.name));
 
-    thrust::host_vector<GpuColumnAttribute> vec;
+    std::vector<GpuColumnAttribute> vec;
     for (auto& col : table.columnDescription) {
         GpuColumnAttribute att;
+
         if (col.type == Type::UNKNOWN || col.type == Type::SET) {
-            return false;
+            return MYERR_STRING("Table has column with unknown or set type!");
         }
 
-        if (!setName(att.name, col.name)) {
-            return false;
-        }
-
+        TRY(setName(att.name, col.name));
         att.type = col.type;
         vec.push_back(att);
     }
 
-    columns.reserve(vec.size());
-    columns = vec;
-    return true;
-
+    columns.resize(vec.size());
+    thrust::copy(vec.begin(), vec.end(), columns.begin());
+    return Ok();
 }
 
 template<SpatialType spatialtype, TemporalType temporaltype>
@@ -135,39 +130,36 @@ void testIdenticalKeys(gpudb::GpuRow** rows, uint size, gpudb::GpuRow *nRow, int
     result[idx] = testIdenticalRowKeys<spatialtype, temporaltype>(rows[idx], nRow);
 }
 
-bool gpudb::GpuTable::insertRow(TableDescription &descriptor,gpudb::GpuRow* row, uint64_t memsize) {
-    gpudb::GpuStackAllocator::getInstance().pushPosition();
-    do {
+Result<void, Error<std::string>>
+gpudb::GpuTable::insertRow(TableDescription &descriptor, gpudb::GpuRow* row, uint64_t memsize) {
         int cpuRes = 0;
+
         if (rows.size() > 0) {
-            int *result = gpudb::GpuStackAllocator::getInstance().alloc<int>(rows.size());
+            auto result = gpudb::GpuStackAllocatorAdditions::allocUnique<int>(rows.size());
+
             size_t temp_size = 0;
-            cub::DeviceReduce::Sum(nullptr, temp_size, result, &cpuRes, rows.size());
-            uint8_t *tmp = gpudb::GpuStackAllocator::getInstance().alloc<uint8_t>(temp_size);
-            int *resgpu = gpudb::GpuStackAllocator::getInstance().alloc<int>();
+            cub::DeviceReduce::Sum(nullptr, temp_size, result.get(), &cpuRes, rows.size());
+
+            auto tmp = gpudb::GpuStackAllocatorAdditions::allocUnique<uint8_t>(temp_size);
+            auto resgpu = gpudb::GpuStackAllocatorAdditions::allocUnique<int>();
+
             if (result == nullptr || tmp == nullptr || resgpu == nullptr) {
-                break;
+                return MYERR_STRING("nullptr was returned");
             }
 
             dim3 block(BLOCK_SIZE);
             dim3 grid = gridConfigure(rows.size(), block);
 
-            SWITCH_RUN(descriptor.spatialKeyType, descriptor.temporalKeyType, testIdenticalKeys, grid, block, thrust::raw_pointer_cast(rows.data()), rows.size(), row, result);
-            cub::DeviceReduce::Sum(tmp, temp_size, result, resgpu, rows.size());
-            cudaMemcpy(&cpuRes, resgpu, sizeof(int), cudaMemcpyDeviceToHost);
-            gpudb::GpuStackAllocator::getInstance().free(result);
+            SWITCH_RUN(descriptor.spatialKeyType, descriptor.temporalKeyType, testIdenticalKeys, grid, block, thrust::raw_pointer_cast(rows.data()), rows.size(), row, result.get());
+            cub::DeviceReduce::Sum(tmp.get(), temp_size, result.get(), resgpu.get(), rows.size());
+            cudaMemcpy(&cpuRes, resgpu.get(), sizeof(int), cudaMemcpyDeviceToHost);
         }
 
-        gpudb::GpuStackAllocator::getInstance().popPosition();
-
         if (cpuRes) {
-            return false;
+            return MYERR_STRING("row already exist in table");
         }
 
         this->rows.push_back(row);
         this->rowsSize.push_back(memsize);
-        return true;
-    } while(0);
-    gpudb::GpuStackAllocator::getInstance().popPosition();
-    return false;
+        return Ok();
 }

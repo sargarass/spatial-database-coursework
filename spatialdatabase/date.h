@@ -34,6 +34,12 @@ public:
     Date();
 
     FUNC_PREFIX
+    Date(uint32_t year, uint32_t month, uint32_t day, uint32_t hour, uint32_t minutes, uint32_t seconds, uint32_t microseconds)
+        : Date() {
+        set(year, month, day, hour, minutes, seconds, microseconds);
+    }
+
+    FUNC_PREFIX
     bool setHour(uint64_t hour) {
         if (hour <= 23) {
             this->hour = hour;
@@ -93,7 +99,7 @@ public:
     }
 
     static Date getRandomDate();
-
+    static Date getRandomDate(Date const &start, Date const &end);
     FUNC_PREFIX
     int32_t getYear() const {
         return year - 50000;
@@ -139,7 +145,7 @@ public:
     static Date getDateFromEpoch();
 
     FUNC_PREFIX
-    uint64_t codeDate();
+    uint64_t codeDate() const;
 
     std::string toString() const {
         std::string str;

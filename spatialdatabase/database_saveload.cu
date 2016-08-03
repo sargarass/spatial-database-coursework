@@ -1,34 +1,59 @@
 #include "database.h"
 
-bool DataBase::loadFromDisk(std::string path) {
+struct RAII_file {
+    RAII_file(FILE *file) : f {file}
+    {}
+
+    ~RAII_file() {
+        if (f != nullptr) {
+            fclose(f);
+        }
+    }
+
+    operator FILE*() {
+        return f;
+    }
+
+    FILE *f;
+};
+
+
+Result<void, Error<std::string>> DataBase::loadFromDisk(std::string path) {
     deinit();
-    FILE *file = fopen(path.c_str(), "rb");
+
+    RAII_file file { fopen(path.c_str(), "rb") };
 
     if (file == nullptr) {
-        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "file %s was not opened", path.c_str());
-        return false;
+        return MYERR_STRING("file was not opened");
     }
 
     FileDescriptor fdesc;
     fread(&fdesc, sizeof(FileDescriptor), 1, file);
     FileDescriptor hash;
 
-    if (!hashDataBaseFile(file, hash)) {
-        fclose(file);
-        return false;
-    }
+    TRY(hashDataBaseFile(file, hash));
 
     for (int i = 0; i < SHA512_DIGEST_LENGTH; i++) {
         if (hash.sha512[i] != fdesc.sha512[i]) {
-            fclose(file);
-            return false;
+            return MYERR_STRING("file was corrupted");
         }
     }
 
+    RAII_GC<gpudb::GpuTable> gc;
     for (uint64_t tableIter = 0; tableIter < fdesc.tablesNum; tableIter++) {
-        gpudb::GpuTable * gputable = new gpudb::GpuTable;
+        gpudb::GpuTable * gputable = new (std::nothrow) gpudb::GpuTable;
+
+        if (gputable == nullptr) {
+            return MYERR_STRING("not enought memory");
+        }
+        gc.registrCPU(gputable);
+
+
         TableChunk tchunk;
-        fread(&tchunk, sizeof(TableChunk), 1, file);
+
+        if (fread(&tchunk, sizeof(TableChunk), 1, file) != 1) {
+            return MYERR_STRING("I/O error");
+        }
 
         memcpy(gputable->name, tchunk.tableName, NAME_MAX_LEN);
         gputable->name[NAME_MAX_LEN - 1] = 0;
@@ -40,12 +65,14 @@ bool DataBase::loadFromDisk(std::string path) {
         desc.spatialKeyType = tchunk.spatialKeyType;
         desc.temporalKeyType = tchunk.temporalKeyType;
 
-        thrust::host_vector<gpudb::GpuColumnAttribute> columns;
+        std::vector<gpudb::GpuColumnAttribute> columns;
         for (uint32_t colIter = 0; colIter < tchunk.numColumns; colIter++) {
             AttributeDescription atr;
             ColumnsChunk readCol;
 
-            fread(&readCol, sizeof(ColumnsChunk), 1, file);
+            if (fread(&readCol, sizeof(ColumnsChunk), 1, file) != 1) {
+                return MYERR_STRING("I/O error");
+            }
 
             atr.name = std::string(readCol.atr.name);
             atr.type = readCol.atr.type;
@@ -59,58 +86,64 @@ bool DataBase::loadFromDisk(std::string path) {
 
         for (uint32_t sizeIter = 0; sizeIter < tchunk.numRows; sizeIter++) {
             RowChunk sizechunk;
-            fread(&sizechunk, sizeof(RowChunk), 1, file);
+            if (fread(&sizechunk, sizeof(RowChunk), 1, file) != 1) {
+                return MYERR_STRING("I/O error");
+            }
             gputable->rowsSize.push_back(sizechunk.rowSize);
         }
 
-        thrust::host_vector<gpudb::GpuRow*> hostRowMemory;
+        std::vector<gpudb::GpuRow*> hostRowMemory;
         for (uint32_t rowIter = 0; rowIter < tchunk.numRows; rowIter++) {
             uint8_t *memory = gpudb::gpuAllocator::getInstance().alloc<uint8_t>(gputable->rowsSize[rowIter]);
 
             if (memory != nullptr) {
+                gc.registrGPU(memory);
                 hostRowMemory.push_back((gpudb::GpuRow*)(memory));
             } else {
-                for (uint j = 0; j < rowIter; j++) {
-                    gpudb::gpuAllocator::getInstance().free(hostRowMemory[j]);
-                }
-                return false;
+                return MYERR_STRING("not enought gpumemory");
             }
         }
 
         for (uint32_t rowIter = 0; rowIter < tchunk.numRows; rowIter++) {
-            uint8_t *memory = StackAllocator::getInstance().alloc<uint8_t>(gputable->rowsSize[rowIter]);
+            auto memory = StackAllocatorAdditions::allocUnique<uint8_t>(gputable->rowsSize[rowIter]);
             uint32_t writeSize = gputable->rowsSize[rowIter];
             uint32_t chunkSize = 1024;
             uint32_t numfwrite = writeSize / chunkSize;
             uint32_t tail = writeSize % chunkSize;
 
             uint64_t offset = 0;
-            for (uint32_t part = 0; part < numfwrite; part++) {
-                fread(memory + offset, chunkSize, 1, file);
-                offset += chunkSize;
+            if (fread(memory.get() + offset, chunkSize, numfwrite, file) != numfwrite) {
+                return MYERR_STRING("I/O error");
             }
+
+            offset += chunkSize * numfwrite;
 
             if (tail > 0) {
-                fread(memory + offset, tail, 1, file);
+                if (fread(memory.get() + offset, tail, 1, file) != 1) {
+                    return MYERR_STRING("I/O error");
+                }
             }
-            load((gpudb::GpuRow *)(memory), NULL);
-            storeGPU(hostRowMemory[rowIter], (gpudb::GpuRow *)memory, writeSize);
-            StackAllocator::getInstance().free(memory);
+
+            load((gpudb::GpuRow *)(memory.get()), NULL);
+            storeGPU(hostRowMemory[rowIter], (gpudb::GpuRow *)memory.get(), writeSize);
         }
 
-        gputable->rows.reserve(hostRowMemory.size());
-        gputable->rows = hostRowMemory;
+        gputable->rows.resize(hostRowMemory.size());
+        thrust::copy(hostRowMemory.begin(), hostRowMemory.end(), gputable->rows.begin());
+
         tables.insert(tablesPair(desc.name, gputable));
         tablesType.insert(tablesTypePair(desc.name, desc));
+
+        gc.takeGPU();
+        gc.takeCPU();
     }
-    fclose(file);
-    return true;
+    return Ok();
 }
 
 
-bool DataBase::hashDataBaseFile(FILE *file, FileDescriptor &desc) {
+Result<void, Error<std::string>> DataBase::hashDataBaseFile(FILE *file, FileDescriptor &desc) {
     if (!file) {
-        return false;
+        return MYERR_STRING("file is nullptr");
     }
 
     uint64_t position = ftell(file);
@@ -128,36 +161,37 @@ bool DataBase::hashDataBaseFile(FILE *file, FileDescriptor &desc) {
 
     char chunk[chunkSize];
     for (uint32_t part = 0; part < numfread; part++) {
-        fread(chunk, chunkSize, 1, file);
+        if (fread(chunk, chunkSize, 1, file) != 1) {
+            return MYERR_STRING("IO error");
+        }
         SHA512_Update(&ctx, chunk, chunkSize);
     }
 
     if (tail > 0) {
-        fread(chunk, tail, 1, file);
+        if (fread(chunk, tail, 1, file) != 1) {
+            return MYERR_STRING("IO error");
+        }
+
         SHA512_Update(&ctx, chunk, tail);
     }
 
     SHA512_Final(desc.sha512, &ctx);
     fseek(file, position, SEEK_SET);
-/*
-    for (int i = 0; i < SHA512_DIGEST_LENGTH; i++) {
-        printf("%d", (uint)(desc.sha512[i]));
-    }
-    printf("\n");*/
-
-    return true;
+    return Ok();
 }
 
-bool DataBase::saveOnDisk(std::string path) {
+Result<void, Error<std::string>> DataBase::saveOnDisk(std::string path) {
     FileDescriptor fdesc;
     fdesc.tablesNum = this->tables.size();
-    FILE *file = fopen(path.c_str(), "wb+");
+    RAII_file file = { fopen(path.c_str(), "wb+") };
 
     if (!file) {
-        return false;
+        return MYERR_STRING("file is nullptr");
     }
 
-    fwrite(&fdesc, sizeof(FileDescriptor), 1, file);
+    if (fwrite(&fdesc, sizeof(FileDescriptor), 1, file) != 1) {
+        return MYERR_STRING("IO error");
+    }
 
     auto it = this->tables.begin();
     auto it2 = this->tablesType.begin();
@@ -165,8 +199,10 @@ bool DataBase::saveOnDisk(std::string path) {
         gpudb::GpuTable *table = it->second;
         TableDescription &desc = it2->second;
 
-        thrust::host_vector<gpudb::GpuColumnAttribute> atrVec = table->columns;
-        thrust::host_vector<gpudb::GpuRow*> gpuRows = table->rows;
+        std::vector<gpudb::GpuColumnAttribute> atrVec(table->columns.size());
+        std::vector<gpudb::GpuRow*> gpuRows(table->rows.size());
+        thrust::copy(table->columns.begin(), table->columns.end(), atrVec.begin());
+        thrust::copy(table->rows.begin(), table->rows.end(), gpuRows.begin());
 
         TableChunk curtable;
         memcpy(curtable.tableName, table->name, NAME_MAX_LEN);
@@ -183,23 +219,29 @@ bool DataBase::saveOnDisk(std::string path) {
         curtable.numColumns = table->columns.size();
         curtable.numRows = table->rows.size();
 
-        fwrite(&curtable, sizeof(TableChunk), 1, file);
+        if (fwrite(&curtable, sizeof(TableChunk), 1, file) != 1) {
+            return MYERR_STRING("IO error");
+        }
 
         for (gpudb::GpuColumnAttribute &atr : atrVec) {
             ColumnsChunk chunk;
             chunk.atr = atr;
-            fwrite(&chunk, sizeof(ColumnsChunk), 1, file);
+            if (fwrite(&chunk, sizeof(ColumnsChunk), 1, file) != 1) {
+                return MYERR_STRING("IO error");
+            }
         }
 
         for (uint64_t size : table->rowsSize) {
             RowChunk chunk;
             chunk.rowSize = size;
-            fwrite(&chunk, sizeof(RowChunk), 1, file);
+            if (fwrite(&chunk, sizeof(RowChunk), 1, file) != 1) {
+                return MYERR_STRING("IO error");
+            }
         }
 
         for (uint64_t iter = 0; iter < table->rows.size(); iter++) {
-            uint8_t *memory = StackAllocator::getInstance().alloc<uint8_t>(table->rowsSize[iter]);
-            gpudb::GpuRow *cpuRow = reinterpret_cast<gpudb::GpuRow*>(memory);
+            auto memory = StackAllocatorAdditions::allocUnique<uint8_t>(table->rowsSize[iter]);
+            gpudb::GpuRow *cpuRow = reinterpret_cast<gpudb::GpuRow*>(memory.get());
 
             loadCPU(cpuRow, gpuRows[iter], table->rowsSize[iter]);
             store((gpudb::GpuRow *)NULL, cpuRow); // там нужно чтобы указатели обозначали только offset от начала структуры
@@ -209,28 +251,30 @@ bool DataBase::saveOnDisk(std::string path) {
             uint32_t tail = writeSize % chunkSize;
 
             uint64_t offset = 0;
-            for (uint32_t part = 0; part < numfwrite; part++) {
-                fwrite(memory + offset, chunkSize, 1, file);
-                offset += chunkSize;
+            if (fwrite(memory.get() + offset, chunkSize, numfwrite, file) != numfwrite) {
+                return MYERR_STRING("IO error");
             }
+
+            offset += chunkSize * numfwrite;
+
 
             if (tail > 0) {
-                fwrite(memory + offset, tail, 1, file);
+                if (fwrite(memory.get() + offset, tail, 1, file) != 1) {
+                    return MYERR_STRING("IO error");
+                }
             }
-
-            StackAllocator::getInstance().free(memory);
         }
         it++;
         it2++;
     }
 
-    if (!hashDataBaseFile(file, fdesc)) {
-        fclose(file);
-        return false;
-    }
+    TRY(hashDataBaseFile(file, fdesc));
 
     fseek(file, 0, SEEK_SET);
-    fwrite(&fdesc, sizeof(FileDescriptor), 1, file);
-    fclose(file);
-    return true;
+
+    if (fwrite(&fdesc, sizeof(FileDescriptor), 1, file) != 1) {
+        return MYERR_STRING("IO error");
+    }
+
+    return Ok();
 }

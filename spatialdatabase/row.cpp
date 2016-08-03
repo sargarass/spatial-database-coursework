@@ -1,21 +1,21 @@
 #include "row.h"
 #include "temptable.h"
 
-bool Attribute::setNullValue(Type t) {
+Result<void, Error<std::string>> Attribute::setNullValue(Type t) {
     this->type = t;
     this->isNullVal = true;
     return setValueImp(t, nullptr);
 }
 
 template<>
-bool Attribute::setValue(int64_t const val) {
+Result<void, Error<std::string>> Attribute::setValue(int64_t const val) {
     this->type = Type::INT;
     this->isNullVal = false;
     return setValueImp(Type::INT, &val);
 }
 
 template<>
-bool Attribute::setValue(int32_t const val) {
+Result<void, Error<std::string>> Attribute::setValue(int32_t const val) {
     this->type = Type::INT;
     this->isNullVal = false;
     int64_t ival = val;
@@ -23,7 +23,7 @@ bool Attribute::setValue(int32_t const val) {
 }
 
 template<>
-bool Attribute::setValue(uint32_t const val) {
+Result<void, Error<std::string>> Attribute::setValue(uint32_t const val) {
     this->type = Type::INT;
     this->isNullVal = false;
     int64_t ival = val;
@@ -31,7 +31,7 @@ bool Attribute::setValue(uint32_t const val) {
 }
 
 template<>
-bool Attribute::setValue(uint64_t const val) {
+Result<void, Error<std::string>> Attribute::setValue(uint64_t const val) {
     this->type = Type::INT;
     this->isNullVal = false;
     int64_t ival = val;
@@ -39,7 +39,7 @@ bool Attribute::setValue(uint64_t const val) {
 }
 
 template<>
-bool Attribute::setValue(float const val) {
+Result<void, Error<std::string>> Attribute::setValue(float const val) {
     this->type = Type::REAL;
     this->isNullVal = false;
     double dval = val;
@@ -47,58 +47,41 @@ bool Attribute::setValue(float const val) {
 }
 
 template<>
-bool Attribute::setValue(double const val) {
+Result<void, Error<std::string>> Attribute::setValue(double const val) {
     this->type = Type::REAL;
     this->isNullVal = false;
     return setValueImp(Type::REAL, &val);
 }
 
 template<>
-bool Attribute::setValue(std::string const &val) {
+Result<void, Error<std::string>> Attribute::setValue(std::string const &val) {
     this->type = Type::STRING;
     this->isNullVal = false;
     return setValueImp(Type::STRING, val.c_str());
 }
 
 template<>
-bool Attribute::setValue(std::string val) {
+Result<void, Error<std::string>> Attribute::setValue(std::string val) {
     this->type = Type::STRING;
     this->isNullVal = false;
     return setValueImp(Type::STRING, val.c_str());
 }
 
 template<>
-bool Attribute::setValue(char *val) {
+Result<void, Error<std::string>> Attribute::setValue(char const *val) {
     this->type = Type::STRING;
     this->isNullVal = false;
     return setValueImp(Type::STRING, val);
 }
 
 template<>
-bool Attribute::setValue(char const *val) {
-    this->type = Type::STRING;
-    this->isNullVal = false;
-    return setValueImp(Type::STRING, val);
-}
-
-template<>
-bool Attribute::setValue(Date const &date) {
+Result<void, Error<std::string>> Attribute::setValue(Date const &date) {
     if (date.isValid()) {
         this->type = Type::DATE_TYPE;
         this->isNullVal = false;
         return setValueImp(Type::DATE_TYPE, &date);
     }
-    return false;
-}
-
-template<>
-bool Attribute::setValue(Date const date) {
-    if (date.isValid()) {
-        this->type = Type::DATE_TYPE;
-        this->isNullVal = false;
-        return setValueImp(Type::DATE_TYPE, &date);
-    }
-    return false;
+    return MYERR_STRING("date is invalid");
 }
 
 bool Attribute::operator<(Attribute const &b) const {
@@ -109,18 +92,19 @@ bool Attribute::operator==(Attribute const &b) const {
     return name == b.name;
 }
 
-bool Attribute::setValueImp(Type t, void const *val) {
+Result<void, Error<std::string>> Attribute::setValueImp(Type t, void const *val) {
     if (value) {
         delete [] value;
         value = nullptr;
     }
 
     uint64_t type_size = typeSize(t);
-    uint8_t* value_ptr = new uint8_t[type_size];
+    uint8_t* value_ptr = new (std::nothrow) uint8_t[type_size];
 
     if (value_ptr == nullptr) {
-        return false;
+        return MYERR_STRING("not enough memory (value_ptr == nullptr)");
     }
+
     memset(value_ptr, 0, type_size);
     switch(t) {
         case Type::STRING:
@@ -139,7 +123,7 @@ bool Attribute::setValueImp(Type t, void const *val) {
     }
 
     value = reinterpret_cast<void*>(value_ptr);
-    return true;
+    return Ok();
 }
 
 Attribute::Attribute() {
@@ -177,13 +161,13 @@ Attribute::Attribute(Attribute const &c)
     *this = c;
 }
 
-bool Attribute::setName(std::string name) {
+Result<void, Error<std::string>> Attribute::setName(std::string name) {
     if (name.length() > NAME_MAX_LEN) {
-        return false;
+        return MYERR_STRING(string_format("name len %d is great than max len %d", name.length(), NAME_MAX_LEN));
     }
 
     this->name = name;
-    return true;
+    return Ok();
 }
 
 std::string Attribute::getName() const {
@@ -198,20 +182,36 @@ Type Attribute::getType() const {
     return type;
 }
 
-std::string Attribute::getString() const {
-    return std::string((char*)value);
+Result<std::string, Error<std::string>> Attribute::getString() const {
+    if (this->type == Type::STRING) {
+        return Ok(std::string((char*)value));
+    }
+    return MYERR_STRING("Attribute has different type!");
 }
 
-int64_t Attribute::getInt() const {
-    return *(int64_t*)value;
+Result<int64_t, Error<std::string>> Attribute::getInt() const {
+    if (this->type == Type::INT) {
+        return Ok(*(int64_t*)value);
+    }
+    return MYERR_STRING("Attribute has different type!");
 }
 
-double Attribute::getReal() const {
-    return *(double*)value;
+Result<double, Error<std::string>> Attribute::getReal() const {
+    if (this->type == Type::REAL) {
+        return Ok(*(double*)value);
+    }
+    return MYERR_STRING("Attribute has different type!");
 }
 
-TempTable *Attribute::getSet() const {
-    return (((gpudb::GpuSet*)value)->temptable);
+Result<std::unique_ptr<TempTable>, Error<std::string>> Attribute::getSet() const {
+    if (this->type == Type::SET) {
+        std::unique_ptr<TempTable> tmp { ((gpudb::GpuSet*)value)->temptable };
+        std::default_delete<TempTable> deleter;
+        deleter.bdelete = false;
+        tmp.get_deleter() = deleter;
+        return Ok(std::move(tmp));
+    }
+    return MYERR_STRING("Attribute has different type!");
 }
 
 template<typename T>

@@ -44,3 +44,25 @@ private:
     uintptr_t m_top;
     std::deque<uintptr_t> m_position;
 };
+
+namespace StackAllocatorAdditions {
+    template<typename T>
+    void free(T *handle) {
+        StackAllocator::getInstance().free(handle);
+    }
+
+    template<typename T>
+    T* alloc(uint64_t count) {
+        return StackAllocator::getInstance().alloc<T>(count);
+    }
+
+    template<typename T>
+    std::unique_ptr<T, void(*)(T *)> allocUnique(uint64_t count = 1) {
+        return std::move(std::unique_ptr<T, void(*)(T *)>(alloc<T>(count), free<T>));
+    }
+
+    template<typename T>
+    std::shared_ptr<T> allocShared(uint64_t count = 1) {
+        return std::move(std::shared_ptr<T>(alloc<T>(count), free<T>));
+    }
+}

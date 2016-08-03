@@ -15,7 +15,7 @@
 namespace gpudb {
     class HLBVH {
     public:
-        bool build(AABB *aabb, uint32_t size);
+        Result<void, Error<std::string>> build(AABB *aabb, uint32_t size);
         bool search(AABB aabb);
         bool isBuilded() { return builded; }
         HLBVH();

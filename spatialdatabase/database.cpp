@@ -33,40 +33,36 @@ void DataBase::deinit() {
     tablesType.clear();
 }
 
-bool DataBase::createTable(TableDescription table) {
+Result<void, Error<std::string>> DataBase::createTable(TableDescription table) {
     if (table.name.length() > NAME_MAX_LEN) {
-        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Cannot create table with name = \"%s\" length %d: max %d length",
+        return MYERR_STRING(string_format("Cannot create table with name = \"%s\" length %d: max %d length",
                                  table.name.c_str(),
                                  table.name.length(),
-                                 NAME_MAX_LEN);
-        return false;
+                                 NAME_MAX_LEN
+                                      ));
     }
 
     if (table.columnDescription.size() == 0) {
-        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Cannot create table with zero columns");
-        return false;
+        return MYERR_STRING("Cannot create table with zero columns");
     }
 
     if (tablesType.find(table.name) != tablesType.end()) {
-        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Cannot create table: table with this name is exist");
-        return false;
+        return MYERR_STRING("Cannot create table: table with this name is exist");
     }
 
     std::sort(table.columnDescription.begin(),table.columnDescription.end());
-    gpudb::GpuTable *gputable = new gpudb::GpuTable();
+    std::unique_ptr<gpudb::GpuTable> gputable = std::make_unique<gpudb::GpuTable>();
 
     if (gputable == nullptr) {
-        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Cannot create table: allocation falled");
-        return false;
+        return MYERR_STRING("Cannot create table: allocation falled");
     }
 
-    if (gputable->set(table)) {
-        tablesType.insert(tablesTypePair(table.name, table));
-        tables.insert(tablesPair(table.name, gputable));
-        return true;
-    }
-    delete gputable;
-    return false;
+    TRY(gputable->set(table));
+
+    tablesType.insert(tablesTypePair(table.name, table));
+
+    tables.insert(tablesPair(table.name, gputable.release()));
+    return Ok();
 }
 
 bool validPoint(float2 p) {
@@ -176,36 +172,31 @@ void DataBase::loadCPU(gpudb::GpuRow *dstCPU, gpudb::GpuRow *srcGPU, uint64_t me
     load(dstCPU, srcGPU);
 }
 
-bool DataBase::validateRow(Row &row, TableDescription &desc) {
+Result<void, Error<std::string>>
+DataBase::validateRow(Row &row, TableDescription &desc) {
+
     if (row.spatialKey.type != desc.spatialKeyType) {
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING, "spatialkey type mismatch: \n"
+        return MYERR_STRING(string_format("spatialkey type mismatch: \n"
                                              " wait: %s \n"
                                              " get: %s \n",
                                              typeToString(desc.spatialKeyType).c_str(),
-                                             typeToString(row.spatialKey.type).c_str());
-        return false;
+                                             typeToString(row.spatialKey.type).c_str()));
     }
 
     if (row.spatialKey.name != desc.spatialKeyName) {
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING, "spatialkey name mismatch");
-        return false;
+        return MYERR_STRING("spatialkey name mismatch");
     }
 
     if (row.temporalKey.type != desc.temporalKeyType) {
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING, "temporalkey type mismatch");
-        return false;
+        return MYERR_STRING("temporalkey type mismatch");
     }
 
     if (row.temporalKey.name != desc.temporalKeyName) {
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING, "temporalkey name mismatch");
-        return false;
+        return MYERR_STRING("temporalkey name mismatch");
     }
 
     if (row.values.size() != desc.columnDescription.size()) {
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING,
-                                 "Cannot insert row:"
-                                 " columns size mismatch");
-        return false;
+        return MYERR_STRING("Cannot insert row: columns size mismatch");
     }
 
     if (row.temporalKey.type == TemporalType::BITEMPORAL_TIME || row.temporalKey.type == TemporalType::TRANSACTION_TIME) {
@@ -213,17 +204,11 @@ bool DataBase::validateRow(Row &row, TableDescription &desc) {
     }
 
     if (!row.spatialKey.isValid()) {
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING,
-                                 "Cannot insert row:"
-                                 " spatialkey invalid");
-        return false;
+        return MYERR_STRING("Cannot insert row: spatialkey invalid");
     }
 
     if (!row.temporalKey.isValid()) {
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING,
-                                 "Cannot insert row:"
-                                 " temporalkey invalid \"%s\" \"%s\"", row.temporalKey.validTimeS.toString().c_str(), row.temporalKey.validTimeE.toString().c_str());
-        return false;
+        return MYERR_STRING(string_format("Cannot insert row: temporalkey invalid \"%s\" \"%s\"", row.temporalKey.validTimeS.toString().c_str(), row.temporalKey.validTimeE.toString().c_str()));
     }
 
     std::sort(row.values.begin(), row.values.end());
@@ -231,7 +216,7 @@ bool DataBase::validateRow(Row &row, TableDescription &desc) {
     for (size_t i = 0; i < row.values.size(); i++) {
         if (row.values[i].name != desc.columnDescription[i].name
             || row.values[i].type != desc.columnDescription[i].type) {
-            gLogWrite(LOG_MESSAGE_TYPE::WARNING,
+            return MYERR_STRING(string_format(
                                      "Cannot insert row:\n"
                                      "attribute name:\n"
                                      " wait: \"%s\"\n"
@@ -242,14 +227,14 @@ bool DataBase::validateRow(Row &row, TableDescription &desc) {
                                      desc.columnDescription[i].name.c_str(),
                                      row.values[i].name.c_str(),
                                      typeToString(desc.columnDescription[i].type).c_str(),
-                                     typeToString(row.values[i].type).c_str());
-            return false;
+                                     typeToString(row.values[i].type).c_str()));
         }
     }
-    return true;
+    return Ok();
 }
 
-gpudb::GpuRow *DataBase::allocateRow(Row &row, TableDescription &desc, uint64_t &growMemSize) {
+Result<gpudb::GpuRow *, Error<std::string>>
+DataBase::allocateRow(Row &row, TableDescription &desc, uint64_t &growMemSize) {
     uint64_t withoutKey =  sizeof(gpudb::GpuRow) +
                            sizeof(gpudb::Value) * desc.columnDescription.size()  +
                            desc.getRowMemoryValuesSize();
@@ -267,21 +252,18 @@ gpudb::GpuRow *DataBase::allocateRow(Row &row, TableDescription &desc, uint64_t 
             memsize += sizeof(gpudb::GpuPolygon) + sizeof(float2) * row.spatialKey.points.size();
             break;
         default:
-            return nullptr;
+            return MYERR_STRING("unsupported spatial type");
             break;
     }
     ///
 
-    StackAllocator::getInstance().pushPosition();
-    uint8_t *memory = StackAllocator::getInstance().alloc<uint8_t>(memsize);
+    auto memory = StackAllocatorAdditions::allocUnique<uint8_t>(memsize);
     if (memory == nullptr) {
-        StackAllocator::getInstance().popPosition();
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING, "Not enough cpu memory ");
-        return nullptr;
+        return MYERR_STRING("not enough cpu memory ");
     }
 
-    gpudb::GpuRow *gpuRow = reinterpret_cast<gpudb::GpuRow *>(memory);
-    gpuRow->value = reinterpret_cast<gpudb::Value*>(memory + sizeof(gpudb::GpuRow));
+    gpudb::GpuRow *gpuRow = reinterpret_cast<gpudb::GpuRow *>(memory.get());
+    gpuRow->value = reinterpret_cast<gpudb::Value*>(memory.get() + sizeof(gpudb::GpuRow));
     gpuRow->valueSize = desc.columnDescription.size();
     gpuRow->temporalPart.type = row.temporalKey.type;
 
@@ -301,16 +283,15 @@ gpudb::GpuRow *DataBase::allocateRow(Row &row, TableDescription &desc, uint64_t 
     gpuRow->spatialPart.name[typeSize(Type::STRING) - 1] = 0;
 
     uint8_t *gpuMemory = gpudb::gpuAllocator::getInstance().alloc<uint8_t>(memsize);
-    uint8_t *memoryValue = memory + sizeof(gpudb::GpuRow) + sizeof(gpudb::Value) * gpuRow->valueSize;
+    uint8_t *memoryValue = memory.get() + sizeof(gpudb::GpuRow) + sizeof(gpudb::Value) * gpuRow->valueSize;
+
     if (gpuMemory  == nullptr) {
-        StackAllocator::getInstance().popPosition();
-        gLogWrite(LOG_MESSAGE_TYPE::WARNING, "Not enough gpu memory ");
         growMemSize = 0;
-        return nullptr;
+        return MYERR_STRING("not enough gpu memory ");
     }
 
     gpuRow->spatialPart.type = row.spatialKey.type;
-    gpuRow->spatialPart.key = memory + withoutKey;
+    gpuRow->spatialPart.key = memory.get() + withoutKey;
 
     switch (desc.spatialKeyType) {
         case SpatialType::POINT:
@@ -322,7 +303,7 @@ gpudb::GpuRow *DataBase::allocateRow(Row &row, TableDescription &desc, uint64_t 
         case SpatialType::LINE:
         {
             gpudb::GpuLine *line = ((gpudb::GpuLine*)(gpuRow->spatialPart.key));
-            line->points = reinterpret_cast<float2*>(memory + withoutKey + sizeof(gpudb::GpuLine));
+            line->points = reinterpret_cast<float2*>(memory.get() + withoutKey + sizeof(gpudb::GpuLine));
             line->size = row.spatialKey.points.size();
             for (int i = 0; i < row.spatialKey.points.size(); i++) {
                 line->points[i] = row.spatialKey.points[i];
@@ -332,7 +313,7 @@ gpudb::GpuRow *DataBase::allocateRow(Row &row, TableDescription &desc, uint64_t 
         case SpatialType::POLYGON:
         {
             gpudb::GpuPolygon *polygon = ((gpudb::GpuPolygon*)(gpuRow->spatialPart.key));
-            polygon->points = reinterpret_cast<float2*>(memory + withoutKey + sizeof(gpudb::GpuPolygon));
+            polygon->points = reinterpret_cast<float2*>(memory.get() + withoutKey + sizeof(gpudb::GpuPolygon));
             polygon->size = row.spatialKey.points.size();
             for (int i = 0; i < row.spatialKey.points.size(); i++) {
                 polygon->points[i] = row.spatialKey.points[i];
@@ -350,42 +331,40 @@ gpudb::GpuRow *DataBase::allocateRow(Row &row, TableDescription &desc, uint64_t 
     }
 
     storeGPU(reinterpret_cast<gpudb::GpuRow*>(gpuMemory), gpuRow, memsize);
-    StackAllocator::getInstance().popPosition();
     growMemSize = memsize;
-    return reinterpret_cast<gpudb::GpuRow*>(gpuMemory);
+    return Ok(reinterpret_cast<gpudb::GpuRow*>(gpuMemory));
 }
 
-bool DataBase::insertRow(std::string tableName, Row &row) {
+Result<void, Error<std::string> > DataBase::insertRow(std::string tableName, Row &row) {
     auto tableType = tablesType.find(tableName);
     if (tableType == tablesType.end()) {
-        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Table \"%s\" is not exist", tableName.c_str());
-        return false;
+        return Err(Error<std::string>(ERROR_ARGS(string_format("Table \"%s\" is not exist", tableName.c_str()))));
     }
 
     TableDescription &desc = tableType->second;
 
-    if (!validateRow(row, desc)) {
-        return false;
-    }
+    TRY(validateRow(row, desc));
+
     uint64_t grow_mem_size = 0;
-    gpudb::GpuRow *grow = allocateRow(row, desc, grow_mem_size);
+    gpudb::GpuRow *grow = TRY(allocateRow(row, desc, grow_mem_size));
+
     if (grow == nullptr) {
-        return false;
+        return MYERR_STRING("Cannot allocate gpu memory for row");
     }
 
     gpudb::GpuTable *table = (*tables.find(tableName)).second;
-    if ( table->insertRow(desc, grow, grow_mem_size) ) {
-        return true;
+    auto result = table->insertRow(desc, grow, grow_mem_size);
+    if ( result.isErr() ) {
+        gpudb::gpuAllocator::getInstance().free(grow);
+        return Err(result.unwrapErr());
     }
-
-    gpudb::gpuAllocator::getInstance().free(grow);
-    return false;
+    return Ok();
 }
 
-void DataBase::myprintf(uint tabs, char *format, ...) {
+void DataBase::myprintf(uint tabs, char const *format, ...) {
     va_list arglist;
     char str[256];
-    int i = 0;
+    uint i = 0;
     for (; i < std::min(tabs, 255U); i++) {
         str[i] = ' ';
     }
@@ -396,7 +375,7 @@ void DataBase::myprintf(uint tabs, char *format, ...) {
     va_end( arglist );
 }
 
-bool DataBase::showTableImp(gpudb::GpuTable const &table, TableDescription const &description, uint tabs) {
+void DataBase::showTableImp(gpudb::GpuTable const &table, TableDescription const &description, uint tabs) {
     uint64_t rowNum = 0;
     thrust::host_vector<gpudb::GpuRow*> rows = table.rows;
     for (size_t i = 0; i < table.rowsSize.size(); i++) {
@@ -404,7 +383,7 @@ bool DataBase::showTableImp(gpudb::GpuTable const &table, TableDescription const
         uint8_t *memory = StackAllocator::getInstance().alloc<uint8_t>(memsize);
         if (!memory) {
             gLogWrite(LOG_MESSAGE_TYPE::WARNING, "Not enough memory ");
-            return false;
+            return;
         }
 
         loadCPU(reinterpret_cast<gpudb::GpuRow*>(memory), rows[i], memsize);
@@ -502,64 +481,79 @@ bool DataBase::showTableImp(gpudb::GpuTable const &table, TableDescription const
         rowNum++;
         StackAllocator::getInstance().free(memory);
     }
-    return true;
 }
 
-bool DataBase::showTable(std::string tableName) {
+Result<void, Error<std::string>> DataBase::showTable(std::string tableName) {
     auto it2 = tables.find(tableName);
     auto it = tablesType.find(tableName);
 
     if (it2 == tables.end() || it == tablesType.end()) {
-        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Table \"%s\" is not exist", tableName.c_str());
-        return false;
+        return MYERR_STRING(string_format("Table \"%s\" is not exist", tableName.c_str()));
     }
 
     printf("Table \"%s\" [{\n", it->second.name.c_str());
     gpudb::GpuTable const *gputable = (*it2).second;
-    bool result = showTableImp(*gputable, it->second);
+    showTableImp(*gputable, it->second);
     printf("}]\n_________________________________________\n");
-    return result;
+    return Ok();
 }
 
-bool DataBase::showTableHeaderImp(gpudb::GpuTable const &table, TableDescription const &description) {
+void DataBase::showTableHeaderImp(gpudb::GpuTable const &table, TableDescription const &description) {
     for (int i = 0; i < description.columnDescription.size(); i++) {
         printf("col %d : name = \"%s\" : type = %s\n", i + 1, description.columnDescription[i].name.c_str(), typeToString(description.columnDescription[i].type).c_str());
     }
 }
 
-bool DataBase::showTableHeader(std::string tableName) {
+Result<void, Error<std::string>> DataBase::showTableHeader(std::string tableName) {
     auto it2 = tables.find(tableName);
     auto it = tablesType.find(tableName);
 
     if (it2 == tables.end() || it == tablesType.end()) {
-        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Table \"%s\" is not exist", tableName.c_str());
-        return false;
+        return MYERR_STRING(string_format("Table \"%s\" is not exist", tableName.c_str()));
     }
 
     printf("Table \"%s\" [{\n", it->second.name.c_str());
     gpudb::GpuTable const *gputable = (*it2).second;
-    bool result = showTableHeaderImp(*gputable, it->second);
+    showTableHeaderImp(*gputable, it->second);
     printf("}]\n_________________________________________\n");
-    return result;
+    return Ok();
 }
 
-bool DataBase::showTableHeader(TempTable &t) {
-    if (t.table == nullptr || t.isValid() == false) {
-        return false;
+Result<void, Error<std::string>> DataBase::showTableHeader(std::unique_ptr<TempTable> const &t) {
+    if (t == nullptr) {
+        return MYERR_STRING("temptable is nullptr");
     }
-    printf("TempTable \"%s\" [{\n", t.description.name.c_str());
-    bool result = DataBase::getInstance().showTableImp(*t.table, t.description);
+
+    if (t->table == nullptr) {
+        return MYERR_STRING("temptable table is nullptr");
+    }
+
+    if (t->isValid() == false) {
+        return MYERR_STRING("temptable is invalid");
+    }
+
+    printf("TempTable \"%s\" [{\n", t->description.name.c_str());
+    DataBase::getInstance().showTableImp(*t->table, t->description);
     printf("}]\n_________________________________________\n");
-    return result;
+    return Ok();
 }
 
-bool DataBase::showTable(TempTable &t) {
-    if (t.table == nullptr || t.isValid() == false) {
-        return false;
+Result<void, Error<std::string>> DataBase::showTable(std::unique_ptr<TempTable> const &t) {
+    if (t == nullptr) {
+        return MYERR_STRING("temptable is nullptr");
     }
-    printf("TempTable \"%s\" [{\n", t.description.name.c_str());
-    bool result = DataBase::getInstance().showTableImp(*t.table, t.description);
+
+    if (t->table == nullptr) {
+        return MYERR_STRING("temptable table is nullptr");
+    }
+
+    if (t->isValid() == false) {
+        return MYERR_STRING("temptable is invalid");
+    }
+
+    printf("TempTable \"%s\" [{\n", t->description.name.c_str());
+    DataBase::getInstance().showTableImp(*t->table, t->description);
     printf("}]\n_________________________________________\n");
-    return result;
+    return Ok();
 }
 

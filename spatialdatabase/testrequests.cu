@@ -2,17 +2,9 @@
 #include "constobjects.h"
 using namespace gpudb;
 
-__device__
-bool tester(gpudb::CRow const &row) {
+FILTER_CU(tester){
     Date validS = row.getKeyValidTimeStart();
     Date validE = row.getKeyValidTimeEnd();
-    return (validS.getYear() >= -21669);
+    return (validS.getYear() < 2013 && validE.getYear() < 2013);
 }
 
-
-__device__ Predicate h_tester = tester;
-Predicate getTesterPointer() {
-    Predicate p;
-    cudaMemcpyFromSymbol(&p, h_tester, sizeof(Predicate));
-    return p;
-}
