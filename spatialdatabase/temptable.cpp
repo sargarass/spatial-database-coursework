@@ -3,7 +3,6 @@
 #include <stack>
 TempTable::~TempTable() {
     deinit();
-    printf("%p deleted\n", this);
 }
 
 void TempTable::deinit() {
@@ -47,8 +46,6 @@ void TempTable::deinit() {
 TempTable::TempTable() {
     this->table = nullptr;
     this->valid = false;
-
-    printf("%p allocated\n", this);
 }
 
 SpatialType TempTable::getSpatialKeyType() const {

@@ -217,9 +217,9 @@ void tele3() {
 
 void test() {
     DataBase &db = DataBase::getInstance();
-    //tele3();
-    //db.deinit();
-    //exit(0);
+    tele3();
+    db.deinit();
+    exit(0);
     auto result = db.loadFromDisk("/home/sargarass/tmp/db/test.sdata");
     if (result.isErr()) {
         Error<std::string> err = result.unwrapErr();
@@ -438,14 +438,14 @@ void test() {
     std::unique_ptr<TempTable> temptable5 = res.unwrap();
     db.showTable(temptable5);
 
-//    std::unique_ptr<TempTable> temptable4 = db.linexpointPointsInBufferLine(temptable3, temptable1, 1.0f).unwrap();
-//    db.showTable(temptable4);
+    std::unique_ptr<TempTable> temptable4 = db.linexpointPointsInBufferLine(temptable3, temptable1, 1.0f).unwrap();
+    db.showTable(temptable4);
 
-//    std::unique_ptr<TempTable> temptable6 = db.polygonxpointPointsInPolygon(temptable2, temptable1).unwrap();
-//    db.showTable(temptable6);
+    std::unique_ptr<TempTable> temptable6 = db.polygonxpointPointsInPolygon(temptable2, temptable1).unwrap();
+    db.showTable(temptable6);
 
-//    std::unique_ptr<TempTable> temptable7 = db.polygonxpointPointsInPolygon(temptable6, temptable1).unwrap();
-//    db.showTable(temptable7);
+    std::unique_ptr<TempTable> temptable7 = db.polygonxpointPointsInPolygon(temptable6, temptable1).unwrap();
+    db.showTable(temptable7);
 
 //    std::vector<Row> selected;
 //    db.selectRow(temptable4, p, selected);
