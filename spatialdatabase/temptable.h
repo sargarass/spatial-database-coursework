@@ -2,7 +2,7 @@
 #include "gpudb.h"
 #include "row.h"
 
-struct __align__(16) TempTable {
+class __align__(16) TempTable {
     friend class DataBase;
 public:
     SpatialType getSpatialKeyType() const;
@@ -12,16 +12,15 @@ public:
     TempTable();
 
     bool isValid() const;
-    void deinit();
-
     TempTable(TempTable const &table) = delete;
     void operator=(TempTable const &t) = delete;
     void operator=(TempTable &&t) = delete;
     TempTable(TempTable &&table) = delete;
+    void deinit();
 protected:
     std::list<TempTable *> references;
     std::list<TempTable *> parents;
-    std::list<uintptr_t> needToBeFree;
+    std::list<TempTable *> insideAllocations;
     gpudb::GpuTable *table;
     TableDescription description;
     bool valid;

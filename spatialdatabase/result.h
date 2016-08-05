@@ -55,6 +55,10 @@ public:
     }
 
     Result(Result &&other) {
+        this->operator =(std::forward<Result>(other));
+    }
+
+    void operator=(Result &&other) {
         res = other.res;
         if (isOk()) {
             result_impl::Constructor<T, E>::move(storage, other.storage, result_impl::ok_tag());

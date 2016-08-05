@@ -713,9 +713,10 @@ DataBase::resultToTempTable1(std::unique_ptr<TempTable> const &a, std::unique_pt
     }
 
     std::unique_ptr<TempTable> resultTempTable = TRY(resultToTempTable2(a, b, opname.c_str(), newTempTables.get(), opname.c_str()));
-    resultTempTable->needToBeFree.resize(a->table->rows.size());
+    resultTempTable->insideAllocations.resize(a->table->rows.size());
+
     for (uint i = 0; i < a->table->rows.size(); i++) {
-        resultTempTable->needToBeFree.push_back((uintptr_t)newTempTables.get()[i]);
+        resultTempTable->insideAllocations.push_back(newTempTables.get()[i]);
     }
 
     gcTT.takeCPU();
@@ -727,6 +728,10 @@ DataBase::resultToTempTable1(std::unique_ptr<TempTable> const &a, std::unique_pt
 
 Result<std::unique_ptr<TempTable>, Error<std::string>>
 DataBase::linexpointPointsInBufferLine(std::unique_ptr<TempTable> const &a, std::unique_ptr<TempTable> &b, float radius) {
+    if (a == nullptr || b == nullptr) {
+        return MYERR_STRING("TempTable a or b is nullptr");
+    }
+
     if (!a->isValid() || !b->isValid()) {
         return MYERR_STRING("TempTable a or b is invalid");
     }
@@ -798,7 +803,7 @@ DataBase::linexpointPointsInBufferLine(std::unique_ptr<TempTable> const &a, std:
     cudaMemcpy(&allsize, prefixSumPointsInsideLineBuffer.get() + a->table->rows.size(), sizeof(uint), cudaMemcpyDeviceToHost);
 
     //gpudb::GpuStackAllocator::getInstance().free(cub_tmp_mem);
-    cub_tmp_mem.release();
+    cub_tmp_mem.reset();
 
     auto testedLineNum = gpudb::GpuStackAllocatorAdditions::allocUnique<uint>(allsize);
     auto testedResult = gpudb::GpuStackAllocatorAdditions::allocUnique<uint>(allsize + 1);
@@ -886,6 +891,10 @@ DataBase::linexpointPointsInBufferLine(std::unique_ptr<TempTable> const &a, std:
 
 Result<std::unique_ptr<TempTable>, Error<std::string>>
 DataBase::polygonxpointPointsInPolygon(std::unique_ptr<TempTable> const &a, std::unique_ptr<TempTable> &b) {
+    if (a == nullptr || b == nullptr) {
+        return MYERR_STRING("TempTable a or b is nullptr");
+    }
+
     if (!a->isValid() || !b->isValid()) {
         return MYERR_STRING("TempTable a or b is invalid");
     }
@@ -1181,6 +1190,10 @@ void knearestNeighbor(gpudb::HLBVH bvh,
 
 Result<std::unique_ptr<TempTable>, Error<std::string>>
 DataBase::pointxpointKnearestNeighbor(std::unique_ptr<TempTable> const &a, std::unique_ptr<TempTable> &b, uint k) {
+    if (a == nullptr || b == nullptr) {
+        return MYERR_STRING("TempTable a or b is nullptr");
+    }
+
     if (!a->isValid() || !b->isValid()) {
         return MYERR_STRING("TempTable a or b is invalid");
     }
@@ -1191,7 +1204,7 @@ DataBase::pointxpointKnearestNeighbor(std::unique_ptr<TempTable> const &a, std::
         return MYERR_STRING("a.table  or b.table is nullptr");
     }
 
-    if (a->getSpatialKeyType() != SpatialType::POLYGON ||
+    if (a->getSpatialKeyType() != SpatialType::POINT ||
         b->getSpatialKeyType() != SpatialType::POINT)
     {
         return MYERR_STRING("a or b type mismatch");

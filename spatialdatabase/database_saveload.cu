@@ -44,7 +44,7 @@ Result<void, Error<std::string>> DataBase::loadFromDisk(std::string path) {
         gpudb::GpuTable * gputable = new (std::nothrow) gpudb::GpuTable;
 
         if (gputable == nullptr) {
-            return MYERR_STRING("not enought memory");
+            return MYERR_STRING("not enough memory");
         }
         gc.registrCPU(gputable);
 
@@ -95,12 +95,11 @@ Result<void, Error<std::string>> DataBase::loadFromDisk(std::string path) {
         std::vector<gpudb::GpuRow*> hostRowMemory;
         for (uint32_t rowIter = 0; rowIter < tchunk.numRows; rowIter++) {
             uint8_t *memory = gpudb::gpuAllocator::getInstance().alloc<uint8_t>(gputable->rowsSize[rowIter]);
-
             if (memory != nullptr) {
                 gc.registrGPU(memory);
                 hostRowMemory.push_back((gpudb::GpuRow*)(memory));
             } else {
-                return MYERR_STRING("not enought gpumemory");
+                return MYERR_STRING("not enough gpu memory");
             }
         }
 

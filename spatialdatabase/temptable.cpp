@@ -3,11 +3,12 @@
 #include <stack>
 TempTable::~TempTable() {
     deinit();
+    printf("%p deleted\n", this);
 }
 
 void TempTable::deinit() {
-    for (auto& v : needToBeFree) {
-        delete (void*) v;
+    for (TempTable *v : insideAllocations) {
+        delete v;
     }
 
     // удалили ссылки вверх
@@ -38,7 +39,7 @@ void TempTable::deinit() {
     this->table = nullptr;
     this->valid = false;
     this->description = TableDescription();
-    this->needToBeFree.clear();
+    this->insideAllocations.clear();
     this->parents.clear();
     this->references.clear();
 }
@@ -46,6 +47,8 @@ void TempTable::deinit() {
 TempTable::TempTable() {
     this->table = nullptr;
     this->valid = false;
+
+    printf("%p allocated\n", this);
 }
 
 SpatialType TempTable::getSpatialKeyType() const {

@@ -217,10 +217,17 @@ void tele3() {
 
 void test() {
     DataBase &db = DataBase::getInstance();
-    tele3();
-    db.deinit();
-    exit(0);
-    db.loadFromDisk("/home/sargarass/tmp/db/test.sdata");
+    //tele3();
+    //db.deinit();
+    //exit(0);
+    auto result = db.loadFromDisk("/home/sargarass/tmp/db/test.sdata");
+    if (result.isErr()) {
+        Error<std::string> err = result.unwrapErr();
+        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Was not loaded: %s %s:%d", err.what.c_str(), err.function, err.line);
+        exit(-1);
+    } else {
+        gLogWrite(LOG_MESSAGE_TYPE::INFO, "db was loaded");
+    }
 
     TableDescription table;
     table.setName("test1");
@@ -258,76 +265,77 @@ void test() {
     newRow.addAttribute(atr);
     newRow.addAttribute(atr2);
     std::vector<Row> inserted;
-    //inserted.push_back(newRow);
+//    inserted.push_back(newRow);
 
-    //db.createTable(table);
-   // db.insertRow("test1", newRow);
-   // newRow.spatialKey.points.clear();
-   // newRow.spatialKey.points.push_back(make_float2(0.5, 1.1));
-   // inserted.push_back(newRow);
-  //  db.insertRow("test1", newRow);
-   // newRow.spatialKey.points.clear();
-  //  newRow.spatialKey.points.push_back(make_float2(0.755, 0.0));
-  //  inserted.push_back(newRow);
-  //  db.insertRow("test1", newRow);
-  //  newRow.spatialKey.points.clear();
-  //  newRow.spatialKey.points.push_back(make_float2(0.42, 0.0));
-  //  inserted.push_back(newRow);
-   // db.insertRow("test1", newRow);
-  //  newRow.spatialKey.points.clear();
-  //  newRow.spatialKey.points.push_back(make_float2(0.1241, 0.0));
- //   inserted.push_back(newRow);
-  //  db.insertRow("test1", newRow);
- //   newRow.spatialKey.points.clear();
- //   newRow.spatialKey.points.push_back(make_float2(0.54, 0.0));
- //   inserted.push_back(newRow);
-   // db.insertRow("test1", newRow);
+//    db.createTable(table);
+//    db.insertRow("test1", newRow);
+//    newRow.spatialKey.points.clear();
+//    newRow.spatialKey.points.push_back(make_float2(0.5, 1.1));
+//    inserted.push_back(newRow);
+//    db.insertRow("test1", newRow);
+//    newRow.spatialKey.points.clear();
+//    newRow.spatialKey.points.push_back(make_float2(0.755, 0.0));
+//    inserted.push_back(newRow);
+//    db.insertRow("test1", newRow);
+//    newRow.spatialKey.points.clear();
+//    newRow.spatialKey.points.push_back(make_float2(0.42, 0.0));
+//    inserted.push_back(newRow);
+//    db.insertRow("test1", newRow);
+//    newRow.spatialKey.points.clear();
+//    newRow.spatialKey.points.push_back(make_float2(0.1241, 0.0));
+//    inserted.push_back(newRow);
+//    db.insertRow("test1", newRow);
+//    newRow.spatialKey.points.clear();
+//    newRow.spatialKey.points.push_back(make_float2(0.54, 0.0));
+//    inserted.push_back(newRow);
+//    db.insertRow("test1", newRow);
 
-/*
-    std::vector<float2> random;
-    for (int i = 0; i < 30; i++) {
-        Date d1, d2;
-        d1 = Date::getRandomDate();
-        d2 = Date::getRandomDate();
-        if (d1.codeDate() > d2.codeDate()) {
-            std::swap(d1, d2);
-        }
 
-        newRow.temporalKey.validTimeS = d1;
-        newRow.temporalKey.validTimeE = d2;
-        newRow.spatialKey.points.clear();
-        newRow.spatialKey.points.push_back(make_float2(rand() / float(RAND_MAX) * 10, rand() / float(RAND_MAX) * 10));
-        random.push_back(newRow.spatialKey.points[0]);
-        //db.insertRow("test1", newRow);
-        inserted.push_back(newRow);
-    }
-*/
+//    std::vector<float2> random;
+//    for (int i = 0; i < 30; i++) {
+//        Date d1, d2;
+//        d1 = Date::getRandomDate();
+//        d2 = Date::getRandomDate();
+//        if (d1.codeDate() > d2.codeDate()) {
+//            std::swap(d1, d2);
+//        }
 
-    /*table.setName("test2");
-    table.setSpatialKey("Полигонъ", SpatialType::POLYGON);
-    db.createTable(table);
+//        newRow.temporalKey.validTimeS = d1;
+//        newRow.temporalKey.validTimeE = d2;
+//        newRow.spatialKey.points.clear();
+//        newRow.spatialKey.points.push_back(make_float2(rand() / float(RAND_MAX) * 10, rand() / float(RAND_MAX) * 10));
+//        random.push_back(newRow.spatialKey.points[0]);
+//        //db.insertRow("test1", newRow);
+//        inserted.push_back(newRow);
+//    }
+//    db.insertRow("test1", inserted);
 
-    newRow.spatialKey.points.clear();
-    newRow.spatialKey.points.push_back(make_float2(0.0, -1.0));
-    newRow.spatialKey.points.push_back(make_float2(1.0, 0.0));
-    newRow.spatialKey.points.push_back(make_float2(0.0, 10));
-    newRow.spatialKey.points.push_back(make_float2(-1.0, 0.0));
-    newRow.spatialKey.name = "Полигонъ";
-    newRow.spatialKey.type = SpatialType::POLYGON;
-    db.insertRow("test2", newRow);
 
-    //db.insertRow("test2", newRow);
-    db.showTable("test1");
-    std::set<Attribute> atrSet;
-    atr2.setValue("MOSCOW NEVER CRY");
-    atr.setValue(4542.5489);
-    atrSet.insert(atr2);
-    atrSet.insert(atr);
-*/
+//    table.setName("test2");
+//    table.setSpatialKey("Полигонъ", SpatialType::POLYGON);
+//    db.createTable(table);
 
-    Predicate p = tester();
-    //db.showTable("test1");
-/*
+//    newRow.spatialKey.points.clear();
+//    newRow.spatialKey.points.push_back(make_float2(0.0, -1.0));
+//    newRow.spatialKey.points.push_back(make_float2(1.0, 0.0));
+//    newRow.spatialKey.points.push_back(make_float2(0.0, 10));
+//    newRow.spatialKey.points.push_back(make_float2(-1.0, 0.0));
+//    newRow.spatialKey.name = "Полигонъ";
+//    newRow.spatialKey.type = SpatialType::POLYGON;
+//    db.insertRow("test2", newRow);
+
+//    //db.insertRow("test2", newRow);
+//    db.showTable("test1");
+//    std::set<Attribute> atrSet;
+//    atr2.setValue("MOSCOW NEVER CRY");
+//    atr.setValue(4542.5489);
+//    atrSet.insert(atr2);
+//    atrSet.insert(atr);
+
+
+//    Predicate p = tester();
+//    //db.showTable("test1");
+///*
     db.dropTable("test3");
 
     TableDescription lineTable;
@@ -342,7 +350,7 @@ void test() {
     lineTableAtrDesc.name = "col2";
     lineTable.addColumn(lineTableAtrDesc);
     db.createTable(lineTable);
-    //db.showTableHeader("test3");
+    db.showTableHeader("test3");
 
     newRow.spatialKey.points.clear();
     newRow.spatialKey.points.push_back(make_float2(0.0, 0.0));
@@ -366,40 +374,39 @@ void test() {
     newRow.spatialKey.name = "Линия";
     newRow.spatialKey.type = SpatialType::LINE;
     db.insertRow("test3", newRow);
-*/
+
     std::unique_ptr<TempTable> temptable1 = db.selectTable("test1").unwrap();
     std::unique_ptr<TempTable> temptable2 = db.selectTable("test2").unwrap();
     std::unique_ptr<TempTable> temptable3 = db.selectTable("test3").unwrap();
 
-   /* std::vector<Row> selected;
-    db.selectRow(temptable1, p, selected);
+    std::vector<Row> selected = db.selectRow(temptable1, SELECT_ALL_ROWS()).unwrap();
 
-    for (int i = 0; i < selected.size(); i++) {
-        std::cout << selected[i].temporalKey.validTimeS.toString() << " " << selected[i].temporalKey.validTimeE.toString() << std::endl;
-        std::cout << selected[i].getAttributeSize() << std::endl;
+//    for (int i = 0; i < selected.size(); i++) {
+//        std::cout << selected[i].temporalKey.validTimeS.toString() << " " << selected[i].temporalKey.validTimeE.toString() << std::endl;
+//        std::cout << selected[i].getAttributeSize() << std::endl;
 
-        for (int j = 0; j < selected[i].getAttributeSize(); j++) {
-            std::cout << selected[i].getAttribute(j).getName() << " : "
-            << typeToString(selected[i].getAttribute(j).getType()) << " : ";
-            if (!selected[i].getAttribute(j).isNull()) {
-                switch (selected[i].getAttribute(j).getType()) {
-                    case Type::REAL:
-                        std::cout << selected[i].getAttribute(j).getReal() << " ";
-                        break;
-                    case Type::STRING:
-                        std::cout << selected[i].getAttribute(j).getString() << " ";
-                        break;
-                    case Type::INT:
-                        std::cout << selected[i].getAttribute(j).getInt() << " ";
-                        break;
-                }
-            } else {
-                std::cout << "NULL" << std::endl;
-            }
-        }
-        std::cout << std::endl;
-        std::cout << std::endl;
-    }*/
+//        for (int j = 0; j < selected[i].getAttributeSize(); j++) {
+//            std::cout << selected[i].getAttribute(j).getName() << " : "
+//            << typeToString(selected[i].getAttribute(j).getType()) << " : ";
+//            if (!selected[i].getAttribute(j).isNull()) {
+//                switch (selected[i].getAttribute(j).getType()) {
+//                    case Type::REAL:
+//                        std::cout << selected[i].getAttribute(j).getReal().unwrap() << " ";
+//                        break;
+//                    case Type::STRING:
+//                        std::cout << selected[i].getAttribute(j).getString().unwrap() << " ";
+//                        break;
+//                    case Type::INT:
+//                        std::cout << selected[i].getAttribute(j).getInt().unwrap() << " ";
+//                        break;
+//                }
+//            } else {
+//                std::cout << "NULL" << std::endl;
+//            }
+//        }
+//        std::cout << std::endl;
+//        std::cout << std::endl;
+//    }
     //db.showTable(temptable1);
 //    db.polygonxpointPointsInPolygon(temptable2, temptable1);
 //    //db.showTable("test1");
@@ -417,18 +424,28 @@ void test() {
     db.showTable(temptable1);
     db.showTable(temptable2);
     db.showTable(temptable3);
+    Result<std::unique_ptr<TempTable>, Error<std::string>> res;
+    res = db.pointxpointKnearestNeighbor(temptable1, temptable1, 24);
+    if (res.isErr()) {
+        Error<std::string> err = res.unwrapErr();
+        std::cout <<err.what << std::endl;
+        std::cout <<err.line << std::endl;
+        std::cout <<err.file << std::endl;
+        std::cout <<err.function << std::endl;
 
-    std::unique_ptr<TempTable> temptable5 = db.pointxpointKnearestNeighbor(temptable1, temptable1, 24).unwrap();
+        exit(-1);
+    }
+    std::unique_ptr<TempTable> temptable5 = res.unwrap();
     db.showTable(temptable5);
 
-    std::unique_ptr<TempTable> temptable4 = db.linexpointPointsInBufferLine(temptable3, temptable1, 1.0f).unwrap();
-    db.showTable(temptable4);
+//    std::unique_ptr<TempTable> temptable4 = db.linexpointPointsInBufferLine(temptable3, temptable1, 1.0f).unwrap();
+//    db.showTable(temptable4);
 
-    std::unique_ptr<TempTable> temptable6 = db.polygonxpointPointsInPolygon(temptable2, temptable1).unwrap();
-    db.showTable(temptable6);
+//    std::unique_ptr<TempTable> temptable6 = db.polygonxpointPointsInPolygon(temptable2, temptable1).unwrap();
+//    db.showTable(temptable6);
 
-    std::unique_ptr<TempTable> temptable7 = db.polygonxpointPointsInPolygon(temptable6, temptable1).unwrap();
-    db.showTable(temptable7);
+//    std::unique_ptr<TempTable> temptable7 = db.polygonxpointPointsInPolygon(temptable6, temptable1).unwrap();
+//    db.showTable(temptable7);
 
 //    std::vector<Row> selected;
 //    db.selectRow(temptable4, p, selected);
@@ -463,7 +480,7 @@ void test() {
 //        std::cout << std::endl;
 //        std::cout << std::endl;
 //    }
-        db.insertRow("test1", inserted).unwrap();
+//        db.insertRow("test1", inserted).unwrap();
     //db.update(temptable4, atrSet, p);
   // std::cout << db.showTable(temptable4) << std::endl;
   //  std::cout << "________________________" <<std::endl;
@@ -480,6 +497,13 @@ void test() {
    // temptable5.showTable();
     //pointxpointKnearestNeighbor(temptable5, temptable5, 24, temptable6);
     //temptable6.showTable();
-    db.saveOnDisk("/home/sargarass/tmp/db/test.sdata");
+    auto saveondiskres = db.saveOnDisk("/home/sargarass/tmp/db/test.sdata");
+    if (saveondiskres.isErr()) {
+        Error<std::string> err = saveondiskres.unwrapErr();
+        gLogWrite(LOG_MESSAGE_TYPE::ERROR, "Was not loaded: %s %s:%d", err.what.c_str(), err.function, err.line);
+        exit(-1);
+    } else {
+        gLogWrite(LOG_MESSAGE_TYPE::INFO, "db was saved");
+    }
     //std::cout << db.loadFromDisk("/home/sargarass/tmp/db/test.sdata") << std::endl;
 }
