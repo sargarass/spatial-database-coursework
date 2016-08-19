@@ -86,7 +86,7 @@ namespace gpudb {
         char const *getSpatialKeyName() const;
 
         FUNC_PREFIX
-        char const  *getTransactionKeyName() const;
+        char const  *getTemporalKeyName() const;
 
         FUNC_PREFIX
         uint getColumnSize() const;
@@ -119,7 +119,7 @@ namespace gpudb {
         Date getKeyValidTimeEnd() const;
 
         FUNC_PREFIX
-        Date getKeyTransationType() const;
+        Date getKeyTransactionTime() const;
 
         FUNC_PREFIX
         CGpuPoint getKeyGpuPoint() const;

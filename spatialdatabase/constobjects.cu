@@ -27,7 +27,7 @@ const char *gpudb::CRow::getSpatialKeyName() const {
     return row->spatialPart.name;
 }
 
-const char *gpudb::CRow::getTransactionKeyName() const {
+const char *gpudb::CRow::getTemporalKeyName() const {
     if (row == nullptr) {
         return "(null)";
     }
@@ -78,7 +78,7 @@ Date gpudb::CRow::getKeyValidTimeEnd() const {
     return end;
 }
 
-Date gpudb::CRow::getKeyTransationType() const {
+Date gpudb::CRow::getKeyTransactionTime() const {
     Date t;
     t.setFromCode(row->temporalPart.transactionTimeCode);
     return t;

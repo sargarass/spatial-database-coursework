@@ -19,4 +19,7 @@ Predicate name() { \
 } \
 __device__ bool name##_tester(gpudb::CRow const &row)
 
+#define FILTER_CU_FUNC(name) \
+    __device__ name
+
 FILTER_H(SELECT_ALL_ROWS);

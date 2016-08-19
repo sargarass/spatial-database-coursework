@@ -40,8 +40,10 @@ Result<void, Error<std::string>> TableDescription::addColumn(AttributeDescriptio
     return Ok();
 }
 
-Result<void, Error<std::string>> TableDescription::delColumn(AttributeDescription col) {
-    auto it = std::find(columnDescription.begin(), columnDescription.end(), col);
+Result<void, Error<std::string>> TableDescription::delColumn(std::string colName) {
+    AttributeDescription desc;
+    desc.name = std::move(colName);
+    auto it = std::find(columnDescription.begin(), columnDescription.end(), desc);
 
     if (it == columnDescription.end()) {
         return MYERR_STRING("Col was not found");

@@ -107,8 +107,11 @@ public:
         return values.size();
     }
 
-    Attribute const &getAttribute(uint id) {
-        return values[id];
+    Result<Attribute, Error<std::string>> getAttribute(uint id) {
+        if (id >= values.size()) {
+            return MYERR_STRING(string_format("id is to big: wait 0 <= id <= %zu", values.size()));
+        }
+        return Ok(values[id]);
     }
 
     void clearAttributes() {

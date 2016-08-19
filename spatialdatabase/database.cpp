@@ -47,7 +47,7 @@ Result<void, Error<std::string>> DataBase::createTable(TableDescription table) {
     }
 
     if (tablesType.find(table.name) != tablesType.end()) {
-        return MYERR_STRING("Cannot create table: table with this name is exist");
+        return MYERR_STRING("Cannot create table: table with the same name is exist");
     }
 
     std::sort(table.columnDescription.begin(),table.columnDescription.end());
@@ -380,41 +380,47 @@ void DataBase::showTableImp(gpudb::GpuTable const &table, TableDescription const
     thrust::host_vector<gpudb::GpuRow*> rows = table.rows;
     for (size_t i = 0; i < table.rowsSize.size(); i++) {
         uint64_t memsize = table.rowsSize[i];
-        uint8_t *memory = StackAllocator::getInstance().alloc<uint8_t>(memsize);
+        auto memory = StackAllocatorAdditions::allocUnique<uint8_t>(memsize);
         if (!memory) {
             gLogWrite(LOG_MESSAGE_TYPE::WARNING, "Not enough memory ");
             return;
         }
 
-        loadCPU(reinterpret_cast<gpudb::GpuRow*>(memory), rows[i], memsize);
+        loadCPU(reinterpret_cast<gpudb::GpuRow*>(memory.get()), rows[i], memsize);
         myprintf(tabs, "%zu: ", rowNum);
         myprintf(tabs, " Key {");
-        gpudb::GpuRow *cpu = reinterpret_cast<gpudb::GpuRow *>(memory);
+        gpudb::GpuRow *cpu = reinterpret_cast<gpudb::GpuRow *>(memory.get());
         switch (cpu->spatialPart.type) {
             case SpatialType::POINT:
             {
                 gpudb::GpuPoint *point = reinterpret_cast<gpudb::GpuPoint*>(cpu->spatialPart.key);
-                myprintf(tabs, "[%s : Point : {%f, %f}], ", cpu->spatialPart.name, point->p.x, point->p.y);
+                printf("[%s : Point : {%f; %f}], ", cpu->spatialPart.name, point->p.x, point->p.y);
             }
             break;
             case SpatialType::LINE:
             {
                 gpudb::GpuLine *line = reinterpret_cast<gpudb::GpuLine*>(cpu->spatialPart.key);
-                myprintf(tabs, "[%s : Line : { ", cpu->spatialPart.name);
+                printf("[%s : Line : { ", cpu->spatialPart.name);
                 for (int i = 0; i < line->size; i++) {
-                    myprintf(tabs, "{%f, %f} ", line->points[i].x, line->points[i].y);
+                    printf("{%f; %f}", line->points[i].x, line->points[i].y);
+                    if (i + 1 < line->size) {
+                        printf(", ");
+                    }
                 }
-                myprintf(tabs, "}], ");
+                printf(" }], ");
             }
             break;
             case SpatialType::POLYGON:
             {
                 gpudb::GpuPolygon *polygon = reinterpret_cast<gpudb::GpuPolygon*>(cpu->spatialPart.key);
-                myprintf(tabs, "[%s : Polygon : { ", cpu->spatialPart.name);
+                printf("[%s : Polygon : { ", cpu->spatialPart.name);
                 for (int i = 0; i < polygon->size; i++) {
-                    myprintf(tabs, "{%f, %f} ", polygon->points[i].x, polygon->points[i].y);
+                    printf("{%f; %f}", polygon->points[i].x, polygon->points[i].y);
+                    if (i + 1 < polygon->size) {
+                        printf(", ");
+                    }
                 }
-                myprintf(tabs, "}], ");
+                printf(" }], ");
             }
             break;
         }
@@ -423,44 +429,44 @@ void DataBase::showTableImp(gpudb::GpuTable const &table, TableDescription const
             Date validTimeS, validTimeE;
             validTimeS.setFromCode(cpu->temporalPart.validTimeSCode);
             validTimeE.setFromCode(cpu->temporalPart.validTimeECode);
-            myprintf(tabs, "[%s : Valid Time {%s - %s}]", cpu->temporalPart.name, validTimeS.toString().c_str(), validTimeE.toString().c_str());
+            printf("[%s : Valid Time {%s - %s}]", cpu->temporalPart.name, validTimeS.toString().c_str(), validTimeE.toString().c_str());
 
         }
 
         if (cpu->temporalPart.type == TemporalType::BITEMPORAL_TIME) {
-            myprintf(tabs, ", ");
+            printf(", ");
         }
 
         if (cpu->temporalPart.type == TemporalType::BITEMPORAL_TIME || cpu->temporalPart.type == TemporalType::TRANSACTION_TIME) {
             Date transactionTime;
             transactionTime.setFromCode(cpu->temporalPart.transactionTimeCode);
-            myprintf(tabs, "[Transaction Time : {%s}]", transactionTime.toString().c_str());
+            printf("[Transaction Time : {%s}]", transactionTime.toString().c_str());
         }
-        myprintf(tabs, "} ");
-        myprintf(tabs, "Value {");
+        printf("} ");
+        printf("Value {");
         fflush(stdout);
         auto iter = description.columnDescription.begin();
         for (size_t i = 0; i < cpu->valueSize; i++) {
-            myprintf(tabs, "[%s : %s : ", iter->name.c_str(), typeToString(description.columnDescription[i].type).c_str());
+            printf("[%s : %s : ", iter->name.c_str(), typeToString(description.columnDescription[i].type).c_str());
             if (cpu->value[i].isNull == false) {
                 switch (description.columnDescription[i].type) {
                     case Type::STRING:
-                        myprintf(tabs, "\"%s\"", (char*)cpu->value[i].value);
+                        printf("\"%s\"", (char*)cpu->value[i].value);
                         break;
                     case Type::REAL:
-                        myprintf(tabs, "%f", *(double*)cpu->value[i].value);
+                        printf("%f", *(double*)cpu->value[i].value);
                         break;
                     case Type::INT:
-                        myprintf(tabs, "%d", *(int*)cpu->value[i].value);
+                        printf("%d", *(int*)cpu->value[i].value);
                         break;
                     case Type::DATE_TYPE:
                     {
                         Date *ptr= (Date*)cpu->value[i].value;
-                        myprintf(tabs, "%s", ptr->toString().c_str());
+                        printf("%s", ptr->toString().c_str());
                     }
                     case Type::SET:
                     {
-                        myprintf(tabs, "\n");
+                        printf("\n");
                         TempTable *ptr= ((gpudb::GpuSet*)cpu->value[i].value)->temptable;
                         showTableImp(*ptr->table, ptr->description, tabs + 2);
                     }
@@ -469,17 +475,16 @@ void DataBase::showTableImp(gpudb::GpuTable const &table, TableDescription const
                         break;
                 }
             } else {
-                myprintf(tabs, "%s", "NULL");
+                printf("NULL");
             }
-            myprintf(tabs, "] ");
+            printf("]");
             if (i + 1 < cpu->valueSize) {
-                myprintf(tabs, ", ");
+                printf(", ");
             }
             iter++;
         }
-        myprintf(tabs, "}\n");
+        printf("}\n");
         rowNum++;
-        StackAllocator::getInstance().free(memory);
     }
 }
 
@@ -533,7 +538,7 @@ Result<void, Error<std::string>> DataBase::showTableHeader(std::unique_ptr<TempT
     }
 
     printf("TempTable \"%s\" [{\n", t->description.name.c_str());
-    DataBase::getInstance().showTableImp(*t->table, t->description);
+    showTableImp(*t->table, t->description);
     printf("}]\n_________________________________________\n");
     return Ok();
 }
@@ -552,7 +557,7 @@ Result<void, Error<std::string>> DataBase::showTable(std::unique_ptr<TempTable> 
     }
 
     printf("TempTable \"%s\" [{\n", t->description.name.c_str());
-    DataBase::getInstance().showTableImp(*t->table, t->description);
+    showTableImp(*t->table, t->description);
     printf("}]\n_________________________________________\n");
     return Ok();
 }

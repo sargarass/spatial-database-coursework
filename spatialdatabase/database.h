@@ -86,18 +86,22 @@ public:
     Result<std::vector<Row>, Error<std::string>> selectRow(std::string tableName, Predicate p);
     Result<std::vector<Row>, Error<std::string>> selectRow(std::unique_ptr<TempTable> &table, Predicate p);
     Result<std::unique_ptr<TempTable>, Error<std::string>> selectTable(std::string tableName);
-    Result<void, Error<std::string>> insertRow(std::string tableName, std::vector<Row> &rows);
-    Result<void, Error<std::string>> insertRow(std::string tableName, Row &row);
+
+
     Result<void, Error<std::string>> createTable(TableDescription table);
+    Result<void, Error<std::string>> dropTable(std::string tableName);
+
     Result<void, Error<std::string>> showTable(std::string tableName);
     Result<void, Error<std::string>> showTable(std::unique_ptr<TempTable> const &t);
     Result<void, Error<std::string>> showTableHeader(std::string tableName);
     Result<void, Error<std::string>> showTableHeader(std::unique_ptr<TempTable> const &t);
+
+    Result<void, Error<std::string>> insertRow(std::string tableName, std::vector<Row> &rows);
+    Result<void, Error<std::string>> insertRow(std::string tableName, Row &row);
     Result<void, Error<std::string>> update(std::string tableName, std::set<Attribute> const &atrSet, Predicate p);
     Result<void, Error<std::string>> update(std::unique_ptr<TempTable> &t, std::set<Attribute> const &atrSet, Predicate p);
     Result<void, Error<std::string>> dropRow(std::string tableName, Predicate p);
-    Result<void, Error<std::string>> dropRow(std::unique_ptr<TempTable> &t, Predicate p);
-    Result<void, Error<std::string>> dropTable(std::string tableName);
+    Result<std::unique_ptr<TempTable>, Error<std::string>> filter(std::unique_ptr<TempTable> &t, Predicate p);
 
     static DataBase &getInstance();
     void deinit();
@@ -117,8 +121,7 @@ private:
     Result<void, Error<std::string>> updateImp(TableDescription &desc, gpudb::GpuTable *table, std::set<Attribute> const &atrSet, Predicate p);
     void showTableImp(gpudb::GpuTable const &table, const TableDescription &description, uint tabs =0);
     void showTableHeaderImp(gpudb::GpuTable const &table, const TableDescription &description);
-    Result<void, Error<std::string>> dropRowImp(gpudb::GpuTable *table, Predicate p, bool freeRowMemory);
-
+    Result<void, Error<std::string>> dropRowImp(gpudb::GpuTable *table, Predicate p);
     static void store(gpudb::GpuRow * const dst, gpudb::GpuRow * const src);
     static void load(gpudb::GpuRow * const dst, gpudb::GpuRow * const src);
     static void storeGPU(gpudb::GpuRow *dst, gpudb::GpuRow *src, uint64_t memsize);

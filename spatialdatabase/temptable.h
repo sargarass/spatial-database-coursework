@@ -16,8 +16,8 @@ public:
     void operator=(TempTable const &t) = delete;
     void operator=(TempTable &&t) = delete;
     TempTable(TempTable &&table) = delete;
-    void deinit();
 protected:
+    void deinit();
     std::list<TempTable *> references;
     std::list<TempTable *> parents;
     std::list<TempTable *> insideAllocations;
