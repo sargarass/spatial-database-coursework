@@ -1,0 +1,9 @@
+[submodule "externlibs/cub"]
+	path = externlibs/cub
+	url = https://github.com/NVlabs/cub.git
+[submodule "externlibs/thrust"]
+	path = externlibs/thrust
+	url = https://github.com/thrust/thrust.git
+[submodule "externlibs/moderngpu"]
+	path = externlibs/moderngpu
+	url = https://github.com/moderngpu/moderngpu.git
