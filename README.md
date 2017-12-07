@@ -6,7 +6,7 @@ The key consists of two parts:
 2. Temporal part is interval of *valid time* or *transaction time* or *bitemporal time* (both *valid time* and *transaction time*)
 Values is a string where each element can be one of the following types: *string*, *integer*, *float*, *time*.
 The Database is not supported parallel queries. 
-Each query to the database is simultaneously applied to all rows (1 Cuda thread per row) and is accelerated by HLBVH2. It is a spatial binary tree which can be built on GPU in linear time. It used z-curve for mapping 4D space (2D spatial + 2D temporal spaces) to the 1D 96bit key. 
+Each query to the database is simultaneously applied to all rows (1 Cuda thread per row) and is accelerated by [HLBVH2](https://dl.acm.org/citation.cfm?id=2018333). It is a spatial binary tree which can be built on GPU in linear time. It used z-curve for mapping 4D space (2D spatial + 2D temporal spaces) to the 1D 96bit key. 
 
 The database supports the following types of operation:
 
@@ -15,6 +15,8 @@ The database supports the following types of operation:
 > **Input**: two tables with points as spatial part of keys
 >
 > **Output**: new table with rows of the first table which are modified by addition column. Each element in this column consists of the rows from the second table that are k-nearest neighbours for the key in the row.
+>
+>Algorithm used HLBVH2 and based on computing [min/minimax dist](http://postgis.refractions.net/support/nearestneighbor.pdf)
 
 2. Find points that are laid in polygon:
 
