@@ -51,7 +51,7 @@ In the folder with project type in console:
 - make
 
 # How to run
-You need nvidia videocard which are support compute capability 2.0.
+You need nvidia videocard which supports compute capability 2.0.
 
 In the *bin* folder run console application *DataBase*
 
