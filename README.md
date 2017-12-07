@@ -315,7 +315,7 @@ Table "Строения" [{
 ```
 To find all cafes we (we don't care about performance there, better to use filter first):
 1. Find points that are located on distance not more than *R* from the road.
-2. Filter them by type "Кафе".
+2. Filter them by cafe type ("Кафе").
 
 Let R be 0.05 then the following code solves our problem:
 ```
