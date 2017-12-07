@@ -2,7 +2,7 @@
 # EN:
 The database is allowed to create tables with spatial-temporal keys and values of different types. Every key is unique in a table.
 The key consists of two parts:
-1. Spatial part is a polygon or point or polyline in 2D.
+1. Spatial part is a polygon or point or polyline in 2D (each point are in \[-180;180\]X\[-90;90\]).
 2. Temporal part is interval of *valid time* or *transaction time* or *bitemporal time* (both *valid time* and *transaction time*)
 Values is a string where each element can be one of the following types: *string*, *integer*, *float*, *time*.
 The Database is not supported parallel queries. 
