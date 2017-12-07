@@ -68,17 +68,17 @@ The database supports the following types of operation:
 8. openssl
 
 # How to build (tested in linux gentoo)
-in folder with project type in console:
+In the folder with project type in console:
 - cmake CMakeLists.txt
 - make
 
 # How to run
 You need nvidia videocard which are support compute capability 2.0.
 
-In *bin* folder run console application *DataBase*
+In the *bin* folder run console application *DataBase*
 
 # Cache tuning
-In file database.cpp you can change cache size in gpu and ram. 
+In the file *database.cpp* you can change cache size in gpu and ram. 
 
 These caches are used to fast allocation temp memories for operation (stack allocators).
 ```C++
