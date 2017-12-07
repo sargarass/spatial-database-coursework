@@ -178,8 +178,7 @@ Table "Офисы ТЕЛЕ-3" [{
 Visualisation of data from tables:
 ![](images/offices_image_beforeFilter.png)
 
-
-Let's suppose "Теле3" that wanted to know who was in the first office after 2013 year.
+Let's suppose what "Теле3" wanted to know who was in the first office after 2013 year.
 For this purpose we can write filter:
 ```
 FILTER_CU(tester){
@@ -188,7 +187,7 @@ FILTER_CU(tester){
 }
 ```
 
-Order of operation is impacted on performance so it will be smart to use the simple filter first and then apply algorithm for finding all points in polygon. 
+Order of operation has impact on performance so it will be smart to use the simple filter first and then apply algorithm for finding all points in polygon.
 
 ```
 std::unique_ptr<TempTable> officesTT = db.selectTable("Офисы ТЕЛЕ-3").unwrap();
