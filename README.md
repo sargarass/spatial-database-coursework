@@ -175,6 +175,10 @@ Table "Офисы ТЕЛЕ-3" [{
 }]
 ```
 
+Visualisation of data from tables:
+![](images/offices_image_beforeFilter.png)
+
+
 Let's suppose "Теле3" that wanted to know who was in the first office after 2013 year.
 For this purpose we can write filter:
 ```
@@ -199,6 +203,11 @@ db.showTable(output);
 std::vector<Row> output_rows = db.selectRow(output, SELECT_ALL_ROWS()); // Select all rows from "output"-table
 db.showTable(output_rows[0].getAttribute(2).unwrap().getSet().unwrap()); // show it in console
 ```
+
+
+Visualisation of data from after applying filter:
+![](images/offices_image_afterFilter.png)
+
 Result
 ```
 TempTable "Абоненты ТЕЛЕ-3" [{
@@ -212,3 +221,5 @@ TempTable "Абоненты ТЕЛЕ-3" [{
     Value {[Имя : STRING : "Елисей"] , [Фамилия : STRING : "Попов"] }
 }]
 ```
+Visualisation of result:
+![](images/offices_result.png)
