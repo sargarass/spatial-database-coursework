@@ -355,7 +355,7 @@ TempTable "Строения" [{
 ```
 
 ### Visualisation of problem 
-1. Road is blue color polyline 
+1. Road is blue colored polyline 
 2. All areas that are close to the road are inside green areas.
 3. Red points are buildings that are in this areas.
 4. Purple are buildings that are in this areas and have type "Кафе".
