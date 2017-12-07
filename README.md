@@ -205,10 +205,10 @@ db.showTable(output_rows[0].getAttribute(2).unwrap().getSet().unwrap()); // show
 ```
 
 
-Visualisation of data from after applying filter:
+### Visualisation of data from after applying filter:
 ![](images/offices_image_afterFilter.png)
 
-Result
+### Result
 ```
 TempTable "Абоненты ТЕЛЕ-3" [{
 0:  Key {[Позиция : Point : {-0,249586, 0,520498}], [Время : Valid Time {2014/07/25 09:39:02:328576 - 2014/07/25 09:39:42:392064}]} 
@@ -223,3 +223,140 @@ TempTable "Абоненты ТЕЛЕ-3" [{
 ```
 Visualisation of result:
 ![](images/offices_result.png)
+
+## Cafes near road (Points that are located on distance not more than *R* from the polyline)
+
+Supposed we wanted to find all nearby cafes to the road. For simplification let first table named "Дороги" consists of only one row. This row specifies the road. The spatial part of the key is *polyline* and temporal part is *transaction time*. The value is name of the road.
+This table is shown below:
+```
+Table "Дороги" [{
+0:  Key {[Дорога : Line : { {0,100000; 0,100000}, {0,200000; 0,100000}, {0,100000; 0,200000}, {0,100000; 0,300000},
+                            {0,300000; 0,400000}, {0,400000; 0,000000}, {0,500000; 0,000000}, {0,700000; 0,100000},
+                            {0,500000; 0,400000}, {0,500000; 0,600000}, {0,400000; 0,600000}, {0,400000; 0,700000},
+                            {0,800000; 0,700000}, {0,900000; 0,000000} }],
+         [Transaction Time : {2016/08/18 20:23:15:421013}]} 
+    Value {[Название : STRING : "M4"]}
+}]
+```
+Second table is consist of rows that are specified buildings (spatial part of the key is *point* and temporal part is *transaction time*). Each value in table consist of street name ("Название") and type of building ("Тип")
+```
+Table "Строения" [{
+ 0:  Key {[Позиция : Point : {0,498761; 0,033992}], [Transaction Time : {2016/08/18 20:25:45:209685}]} 
+     Value {[Название : STRING : "Улица "Мартин""], [Тип : STRING : "Стадион"]}
+ 1:  Key {[Позиция : Point : {0,603745; 0,006660}], [Transaction Time : {2016/08/18 20:25:45:209922}]} 
+     Value {[Название : STRING : "Улица "Добрыня""], [Тип : STRING : "Кафе"]}
+ 2:  Key {[Позиция : Point : {0,548661; 0,679430}], [Transaction Time : {2016/08/18 20:25:45:210012}]} 
+     Value {[Название : STRING : "Улица "Нифонт""], [Тип : STRING : "Кинотеатр"]}
+ 3:  Key {[Позиция : Point : {0,113908; 0,176936}], [Transaction Time : {2016/08/18 20:25:45:210094}]} 
+     Value {[Название : STRING : "Улица "Рихард""], [Тип : STRING : "Памятник"]}
+ 4:  Key {[Позиция : Point : {0,569275; 0,740459}], [Transaction Time : {2016/08/18 20:25:45:210158}]} 
+     Value {[Название : STRING : "Улица "Леон""], [Тип : STRING : "Отель"]}
+ 5:  Key {[Позиция : Point : {0,425463; 0,889715}], [Transaction Time : {2016/08/18 20:25:45:210239}]} 
+     Value {[Название : STRING : "Улица "Аникита""], [Тип : STRING : "Отель"]}
+ 6:  Key {[Позиция : Point : {0,622414; 0,590444}], [Transaction Time : {2016/08/18 20:25:45:210303}]} 
+     Value {[Название : STRING : "Улица "Серапион""], [Тип : STRING : "Отель"]}
+ 7:  Key {[Позиция : Point : {0,812990; 0,432279}], [Transaction Time : {2016/08/18 20:25:45:210365}]} 
+     Value {[Название : STRING : "Улица "Иннокентий""], [Тип : STRING : "Отель"]}
+ 8:  Key {[Позиция : Point : {0,986619; 0,311751}], [Transaction Time : {2016/08/18 20:25:45:210426}]} 
+     Value {[Название : STRING : "Улица "Рустам""], [Тип : STRING : "Ресторан"]}
+ 9:  Key {[Позиция : Point : {0,895191; 0,590364}], [Transaction Time : {2016/08/18 20:25:45:210509}]} 
+     Value {[Название : STRING : "Улица "Конрад""], [Тип : STRING : "Ресторан"]}
+10:  Key {[Позиция : Point : {0,843541; 0,443852}], [Transaction Time : {2016/08/18 20:25:45:210572}]} 
+     Value {[Название : STRING : "Улица "Радомир""], [Тип : STRING : "Шаурма"]}
+11:  Key {[Позиция : Point : {0,524824; 0,957449}], [Transaction Time : {2016/08/18 20:25:45:210633}]} 
+     Value {[Название : STRING : "Улица "Кирилл""], [Тип : STRING : "Церковь "Ктулху""]}
+12:  Key {[Позиция : Point : {0,985158; 0,094099}], [Transaction Time : {2016/08/18 20:25:45:210696}]} 
+     Value {[Название : STRING : "Улица "Таврион""], [Тип : STRING : "Памятник"]}
+13:  Key {[Позиция : Point : {0,084629; 0,410621}], [Transaction Time : {2016/08/18 20:25:45:210757}]} 
+     Value {[Название : STRING : "Улица "Мисаил""], [Тип : STRING : "Кинотеатр"]}
+14:  Key {[Позиция : Point : {0,593411; 0,707043}], [Transaction Time : {2016/08/18 20:25:45:210818}]} 
+     Value {[Название : STRING : "Улица "Маркелл""], [Тип : STRING : "Кафе"]}
+15:  Key {[Позиция : Point : {0,990508; 0,406400}], [Transaction Time : {2016/08/18 20:25:45:210881}]} 
+     Value {[Название : STRING : "Улица "Зафар""], [Тип : STRING : "Церковь "Ктулху""]}
+16:  Key {[Позиция : Point : {0,835276; 0,977127}], [Transaction Time : {2016/08/18 20:25:45:210942}]} 
+     Value {[Название : STRING : "Улица "Эльдар""], [Тип : STRING : "Шаурма"]}
+17:  Key {[Позиция : Point : {0,535143; 0,730468}], [Transaction Time : {2016/08/18 20:25:45:211024}]} 
+     Value {[Название : STRING : "Улица "Боримир""], [Тип : STRING : "Кафе"]}
+18:  Key {[Позиция : Point : {0,111978; 0,378684}], [Transaction Time : {2016/08/18 20:25:45:211099}]} 
+     Value {[Название : STRING : "Улица "Вениамин""], [Тип : STRING : "Ресторан"]}
+19:  Key {[Позиция : Point : {0,310029; 0,636802}], [Transaction Time : {2016/08/18 20:25:45:211163}]} 
+     Value {[Название : STRING : "Улица "Эмиль""], [Тип : STRING : "Церковь "Ктулху""]}
+20:  Key {[Позиция : Point : {0,200736; 0,295187}], [Transaction Time : {2016/08/18 20:25:45:211224}]} 
+     Value {[Название : STRING : "Улица "Годфрид""], [Тип : STRING : "Церковь "Ктулху""]}
+21:  Key {[Позиция : Point : {0,109493; 0,285365}], [Transaction Time : {2016/08/18 20:25:45:211288}]} 
+     Value {[Название : STRING : "Улица "Градимир""], [Тип : STRING : "Памятник"]}
+22:  Key {[Позиция : Point : {0,131329; 0,702904}], [Transaction Time : {2016/08/18 20:25:45:211350}]} 
+     Value {[Название : STRING : "Улица "Ульманас""], [Тип : STRING : "Кинотеатр"]}
+23:  Key {[Позиция : Point : {0,737324; 0,121837}], [Transaction Time : {2016/08/18 20:25:45:211422}]} 
+     Value {[Название : STRING : "Улица "Бруно""], [Тип : STRING : "Кинотеатр"]}
+24:  Key {[Позиция : Point : {0,864016; 0,572601}], [Transaction Time : {2016/08/18 20:25:45:211494}]} 
+     Value {[Название : STRING : "Улица "Добрыня""], [Тип : STRING : "Ресторан"]}
+25:  Key {[Позиция : Point : {0,503740; 0,399159}], [Transaction Time : {2016/08/18 20:25:45:211554}]} 
+     Value {[Название : STRING : "Улица "Лазарь""], [Тип : STRING : "Стадион"]}
+26:  Key {[Позиция : Point : {0,272496; 0,615718}], [Transaction Time : {2016/08/18 20:25:45:211614}]} 
+     Value {[Название : STRING : "Улица "Федор""], [Тип : STRING : "Ресторан"]}
+27:  Key {[Позиция : Point : {0,148018; 0,582525}], [Transaction Time : {2016/08/18 20:25:45:211678}]} 
+     Value {[Название : STRING : "Улица "Автандил""], [Тип : STRING : "Памятник"]}
+28:  Key {[Позиция : Point : {0,698137; 0,348754}], [Transaction Time : {2016/08/18 20:25:45:211737}]} 
+     Value {[Название : STRING : "Улица "Игорь""], [Тип : STRING : "Церковь "Ктулху""]}
+29:  Key {[Позиция : Point : {0,290392; 0,807630}], [Transaction Time : {2016/08/18 20:25:45:211800}]} 
+     Value {[Название : STRING : "Улица "Ермолай""], [Тип : STRING : "Шаурма"]}
+30:  Key {[Позиция : Point : {0,758258; 0,421722}], [Transaction Time : {2016/08/18 20:25:45:211862}]} 
+     Value {[Название : STRING : "Улица "Жан""], [Тип : STRING : "Шаурма"]}
+31:  Key {[Позиция : Point : {0,447293; 0,495582}], [Transaction Time : {2016/08/18 20:25:45:211923}]} 
+     Value {[Название : STRING : "Улица "Евстигней""], [Тип : STRING : "Кинотеатр"]}
+32:  Key {[Позиция : Point : {0,308976; 0,311309}], [Transaction Time : {2016/08/18 20:25:45:211985}]} 
+     Value {[Название : STRING : "Улица "Назарий""], [Тип : STRING : "Церковь "Ктулху""]}
+33:  Key {[Позиция : Point : {0,848639; 0,812716}], [Transaction Time : {2016/08/18 20:25:45:212065}]} 
+     Value {[Название : STRING : "Улица "Кронид""], [Тип : STRING : "Отель"]}
+34:  Key {[Позиция : Point : {0,602288; 0,121135}], [Transaction Time : {2016/08/18 20:25:45:212137}]} 
+     Value {[Название : STRING : "Улица "Джамал""], [Тип : STRING : "Церковь "Ктулху""]}
+}]
+```
+To find all cafes we (we don't care about performance there, better to use filter first):
+1. Find points that are located on distance not more than *R* from the road.
+2. Filter them by type "Кафе".
+
+Let R be 0.05 then the following code solves our problem:
+```
+bool FILTER_CU_FUNC(filter_strcmp)(char const *str1, char const *str2) {
+    for (; *str1 && *str2 && *str1 == *str2; ++str1, ++str2) {}
+    return *str2 == *str1;
+}
+
+FILTER_CU(roadFilter) {
+    return !(filter_strcmp(row.getColumnSTRING(1), "Кафе")
+             || filter_strcmp(row.getColumnSTRING(1), "Ресторан"));
+}
+```
+```
+auto buildingTT = db.selectTable("Строения").unwrap();
+auto roadTT = db.selectTable("Дороги").unwrap();
+double radious = 0.05;
+auto outTT = db.linexpointPointsInBufferLine(roadTT, buildingTT, radious).unwrap();
+std::vector<Row> linexpointRows = db.selectRow(outTT, SELECT_ALL_ROWS()).unwrap();
+auto set = linexpointRows[0].getAttribute(1).unwrap().getSet().unwrap();
+auto setfiltered = db.filter(set, roadFilter()).unwrap();
+db.showTable(setfiltered);
+```
+
+### Result:
+```
+TempTable "Строения" [{
+0:  Key {[Позиция : Point : {0,593411; 0,707043}], [Transaction Time : {2016/08/18 20:25:45:210818}]} 
+	Value {[Название : STRING : "Улица "Маркелл""], [Тип : STRING : "Кафе"]}
+1:  Key {[Позиция : Point : {0,864016; 0,572601}], [Transaction Time : {2016/08/18 20:25:45:211494}]}
+	Value {[Название : STRING : "Улица "Добрыня""], [Тип : STRING : "Ресторан"]}
+2:  Key {[Позиция : Point : {0,603745; 0,006660}], [Transaction Time : {2016/08/18 20:25:45:209922}]} 
+	Value {[Название : STRING : "Улица "Добрыня""], [Тип : STRING : "Кафе"]}
+3:  Key {[Позиция : Point : {0,535143; 0,730468}], [Transaction Time : {2016/08/18 20:25:45:211024}]} 
+	Value {[Название : STRING : "Улица "Боримир""], [Тип : STRING : "Кафе"]}
+}]
+```
+
+### Visualisation of problem 
+1. Road is blue color polyline 
+2. All areas that are close to the road are inside green areas.
+3. Red points are buildings that are in this areas.
+4. Purple are buildings that are in this areas and have type "Кафе".
+![](images/cafe_img.png) 
