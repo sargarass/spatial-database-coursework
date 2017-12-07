@@ -58,7 +58,7 @@ In the *bin* folder run console application *DataBase*
 # Cache tuning
 In the file *database.cpp* you can change cache size in vram and ram. 
 
-These caches are used to fast allocation temp memories for operation (stack allocators).
+These caches are used to fast allocation temporary memories for operation (stack allocators).
 ```C++
 gpudb::GpuStackAllocator::getInstance().resize(1056ULL * 1024ULL * 1024ULL);
 StackAllocator::getInstance().resize(1024ULL * 1024ULL * 1024ULL);
