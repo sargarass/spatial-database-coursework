@@ -237,7 +237,7 @@ Table "Дороги" [{
     Value {[Название : STRING : "M4"]}
 }]
 ```
-Second table is consist of rows that are specified buildings (spatial part of the key is *point* and temporal part is *transaction time*). Each value in table consist of street name ("Название") and type of building ("Тип")
+Second table consists of rows which are specified buildings (spatial part of the key is *point* and temporal part is *transaction time*). Each value in table consist of street name ("Название") and type of building ("Тип")
 ```
 Table "Строения" [{
  0:  Key {[Позиция : Point : {0,498761; 0,033992}], [Transaction Time : {2016/08/18 20:25:45:209685}]} 
