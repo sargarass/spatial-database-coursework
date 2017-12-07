@@ -1,5 +1,4 @@
 # spatial-database-coursework
-# EN:
 The database is allowed to create tables with spatial-temporal keys and values of different types. Every key is unique in a table.
 The key consists of two parts:
 1. Spatial part is a polygon or point or polyline in 2D (each point are in \[-180;180\]X\[-90;90\]).
@@ -33,31 +32,7 @@ The database supports the following types of operation:
 4. Insert many rows in a table as one query.
 5. Delete, update, select rows from table by user-specified predicate.
 
-# RU:
-База данных является in-memory, позволяет создавать таблицы с элементами вида ключ-значение,
-в которых ключ состоит из пространственной и временной части.
-Пространственная часть — это либо полигон, либо точка, либо ломаная в двумерном пространстве.
-Временной частью является либо интервал действительного времени *valid time*, либо время транзакции *transaction time*,
-либо и то и другое *bitemporal time*.
-Столбцы таблицы могут иметь следующие типы: строка, целое число, действительное число, временная метка.
-Также в базе данных обеспечивается уникальность ключа.
-
-Для ускорения пространственных запросов применяется структура данных HLBVH2.
-Она представляет собой иерархию ограничивающих оболочек, организованную в двоичное бинарное дерево,
-которая строится за линейное число операций.
-
-Возможные операции в базе данных:
-
-1. Поиск *k* ближайших соседей заданной точки среди множества точек.
-2. Поиск точек, принадлежащих заданному полигону.
-3. Поиск точек, удалённых на расстояние не более *R* от заданной прямой.
-4. Вставка множества строк в таблицу.
-5. Удаление, выборка и изменение строк в таблице по предикату.
-
-Программа использует CUDA для организации параллелизма на уровне строк базы данных. Т.е. одна операция применяется параллельно к группе строк.
-Параллельность на уровне запросов отсутствует.
-
-Более подробное описание в файле texv2.pdf
+For more information please read [texv2.pdf](https://github.com/sargarass/spatial-database-coursework/blob/master/texv2.pdf) (in russian)
 
 # Libraries that were used:
 1. cmake 3.0
