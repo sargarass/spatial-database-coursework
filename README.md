@@ -68,7 +68,7 @@ StackAllocator::getInstance().resize(1024ULL * 1024ULL * 1024ULL);
 ## "TELE-3" (Point inside polygon)
 Let "Tele3" be telecommunications company that wanted to know which subscribers were in offices at the specified interval of time. We supposed that "Tele3" has table "Абоненты ТЕЛЕ-3". Each key in this table consists of GPS position (point) and the time when subscriber was in that position. Each value consists of list with first name ("Имя") and second name ("Фамилия") of subscriber. And supposed that "Tele3" also has table "Офисы ТЕЛЕ-3". Each key in this table consists of office boundary (polygon) and when this office was added to the database.
 
-Code that create this databases:
+Code that create these databases:
 ```
 DataBase &db = DataBase::getInstance();
 TableDescription abonents, offices;
