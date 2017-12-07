@@ -56,7 +56,7 @@ You need nvidia videocard which supports compute capability 2.0.
 In the *bin* folder run console application *DataBase*
 
 # Cache tuning
-In the file *database.cpp* you can change cache size in gpu and ram. 
+In the file *database.cpp* you can change cache size in vram and ram. 
 
 These caches are used to fast allocation temp memories for operation (stack allocators).
 ```C++
