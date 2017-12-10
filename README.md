@@ -1,9 +1,10 @@
 # spatial-database-coursework
 The database are full-in-gpu-memory key-value database that allowed to be saved on hard disk with integrity check at load.
-The database is allowed to create tables with spatial-temporal keys and values of different types. Every key is unique in a table.
+The database allow to create tables with spatial-temporal keys and values of different types. Every key is unique in a table.
 The key consists of two parts:
 1. Spatial part is a polygon or point or polyline in 2D (each point is in \[-180;180\]X\[-90;90\]).
 2. Temporal part is interval of *valid time* or *transaction time* or *bitemporal time* (both *valid time* and *transaction time*)
+
 Values is a string where each element can be one of the following types: *string*, *integer*, *float*, *time*.
 The Database does not supported parallel queries. 
 Each query to the database is simultaneously applied to all rows (1 Cuda thread per row) and is accelerated by [HLBVH2](https://dl.acm.org/citation.cfm?id=2018333). It is a spatial binary tree which can be built on GPU in linear time. It used z-curve for mapping 4D space (2D spatial + 2D temporal spaces) to the 1D 96bit key. 
