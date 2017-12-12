@@ -67,7 +67,7 @@ StackAllocator::getInstance().resize(1024ULL * 1024ULL * 1024ULL);
 
 # Tests
 ## "TELE-3" (Point inside polygon)
-Let "Tele3" be telecommunications company that wanted to know which subscribers were in offices at the specified interval of time. We supposed that "Tele3" has a table "Абоненты ТЕЛЕ-3". Each key in this table consists of GPS position (point) and the time when subscriber was in that position. Each value consists of a list with the first name ("Имя") and the second name ("Фамилия") of a subscriber. And supposed that "Tele3" also has table "Офисы ТЕЛЕ-3". Each key in this table consists of an office boundary (polygon) and when this office was added to the database.
+Let "Tele3" be telecommunications company that wants to know which subscribers were in offices at the specified interval of time. We supposed that "Tele3" has a table "Абоненты ТЕЛЕ-3". Each key in this table consists of GPS position (point) and the time when subscriber was in that position. Each value consists of a list with the first name ("Имя") and the second name ("Фамилия") of a subscriber. And supposed that "Tele3" also has table "Офисы ТЕЛЕ-3". Each key in this table consists of an office boundary (polygon) and when this office was added to the database.
 
 Code that create these databases:
 ```
@@ -97,8 +97,8 @@ db.createTable(offices);
 db.showTable("Абоненты ТЕЛЕ-3");
 db.showTable("Офисы ТЕЛЕ-3");
 ```
-For keys generation in table "Абоненты ТЕЛЕ-3" we used random floats in \[-1;1\] and random time intervals from 2012 to 2016 years.
-The data from this table are shown below:
+For keys generation in the table "Абоненты ТЕЛЕ-3" we used random floats in \[-1;1\] and random time intervals from 2012 to 2016 years.
+The data from this table is shown below:
 ```
 Table "Абоненты ТЕЛЕ-3" [{
  0:  Key {[Позиция : Point : {0,680375, -0,211234}], [Время : Valid Time {2015/12/01 17:20:05:148160 - 2015/12/01 17:20:53:54464}]} 
@@ -179,8 +179,8 @@ Table "Офисы ТЕЛЕ-3" [{
 Visualisation of data from tables:
 ![](images/offices_image_beforeFilter.png)
 
-Let's suppose what "Теле3" wanted to know who was in the first office after 2013 year.
-For this purpose we can write filter:
+Let's suppose that "Теле3" wants to know who was in the first office after 2013 year.
+For this purpose we can write a filter:
 ```
 FILTER_CU(tester){
     Date validE = row.getKeyValidTimeEnd();
@@ -188,7 +188,7 @@ FILTER_CU(tester){
 }
 ```
 
-Order of operation has impact on performance so it will be smart to use the simple filter first and then apply algorithm for finding all points in polygon.
+Order of operation has an impact on performance so it will be smart to use the simple filter first and then apply the algorithm for finding all points in polygon.
 
 ```
 std::unique_ptr<TempTable> officesTT = db.selectTable("Офисы ТЕЛЕ-3").unwrap();
@@ -205,7 +205,7 @@ db.showTable(output_rows[0].getAttribute(2).unwrap().getSet().unwrap()); // show
 ```
 
 
-### Visualisation of data from after applying filter:
+### Visualisation of data after applying the filter:
 ![](images/offices_image_afterFilter.png)
 
 ### Result
@@ -226,7 +226,7 @@ Visualisation of result:
 
 ## Cafes near road (Points that are located on distance not more than *R* from the polyline)
 
-Supposed we wanted to find all nearby cafes to the road. For simplification let first table named "Дороги" consists of only one row. This row specifies the road. The spatial part of the key is *polyline* and temporal part is *transaction time*. The value is name of the road.
+Supposed we wanted to find all nearby cafes to the road. For simplification let first table named "Дороги" consist of only one row. This row specifies the road. The spatial part of the key is *polyline* and temporal part is *transaction time*. The value is a name of the road.
 This table is shown below:
 ```
 Table "Дороги" [{
@@ -238,7 +238,7 @@ Table "Дороги" [{
     Value {[Название : STRING : "M4"]}
 }]
 ```
-Second table consists of rows which are specified buildings (spatial part of the key is *point* and temporal part is *transaction time*). Each value in table consist of street name ("Название") and type of building ("Тип")
+The second table consists of rows which are specified buildings (spatial part of the key is *point* and temporal part is *transaction time*). Each value in the table consist of street name ("Название") and type of building ("Тип")
 ```
 Table "Строения" [{
  0:  Key {[Позиция : Point : {0,498761; 0,033992}], [Transaction Time : {2016/08/18 20:25:45:209685}]} 
@@ -313,8 +313,8 @@ Table "Строения" [{
      Value {[Название : STRING : "Улица "Джамал""], [Тип : STRING : "Церковь "Ктулху""]}
 }]
 ```
-To find all cafes we (we don't care about performance there, better to use filter first):
-1. Find points that are located on distance not more than *R* from the road.
+To find all cafes we (we don't care about performance there, better to use the filter first):
+1. Find points that are located at distance not more than *R* from the road.
 2. Filter them by cafe type ("Кафе").
 
 Let R be 0.05 then the following code solves our problem:
