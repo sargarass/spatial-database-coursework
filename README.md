@@ -1,40 +1,40 @@
 # spatial-database-coursework
-The database are full-in-gpu-memory key-value database that allowed to be saved on hard disk with integrity check at load.
-The database allow to create tables with spatial-temporal keys and values of different types. Every key is unique in a table.
+The database is a full-in-gpu-memory key-value database that allowed to be saved on hard disk with integrity check at load.
+The database allows us to create tables with spatial-temporal keys and values of different types. Every key is unique in a table.
 The key consists of two parts:
-1. Spatial part is a polygon or point or polyline in 2D (each point is in \[-180;180\]X\[-90;90\]).
-2. Temporal part is interval of *valid time* or *transaction time* or *bitemporal time* (both *valid time* and *transaction time*)
+1. Spatial part is a polygon or a point or a polyline in 2D (each point is in \[-180;180\]X\[-90;90\]).
+2. Temporal part is an interval of *valid time* or *transaction time* or *bitemporal time* (both *valid time* and *transaction time*)
 
 Values is a string where each element can be one of the following types: *string*, *integer*, *float*, *time*.
-The Database does not supported parallel queries. 
+The Database does not support parallel queries. 
 Each query to the database is simultaneously applied to all rows (1 Cuda thread per row) and is accelerated by [HLBVH2](https://dl.acm.org/citation.cfm?id=2018333). It is a spatial binary tree which can be built on GPU in linear time. It used z-curve for mapping 4D space (2D spatial + 2D temporal spaces) to the 1D 96bit key. 
 
 The database supports the following types of operation:
 
-1. Find k-nearest neighbours for points.
+1. Find k-nearest neighbors for points.
 
 > **Input**: two tables with points as spatial part of keys
 >
-> **Output**: new table with rows of the first table which are modified by addition column. Each element in this column consists of the rows from the second table that are k-nearest neighbours for the key in the row.
+> **Output**: new table with rows of the first table which are modified by addition column. Each element in this column consists of the rows from the second table that are k-nearest neighbors for the key in the row.
 >
 >Algorithm used HLBVH2 and based on computing [min/minimax dist](http://postgis.refractions.net/support/nearestneighbor.pdf)
 
-2. Find points that are laid in polygon:
+2. Find points that are laid in a polygon:
 
-> **Input**: two tables, the first with polygon as spatial part of keys and the second with point.
+> **Input**: two tables, the first with a polygon as spatial part of keys and the second with a point.
 >
-> **Output**: new table with rows of the first table which are modified by addition column. Each element in this column consists of the rows from the second table such that the point from the key in the row from the second table are laid in polygon from the key in the row from the first table.
+> **Output**: new table with rows of the first table which are modified by addition column. Each element in this column consists of the rows from the second table such that the point from the key in the row from the second table is laid in polygon from the key in the row from the first table.
 
-3. Find points that are located on distance not more than *R* from the polyline.
+3. Find points that are located at distance not more than *R* from the polyline.
 
-> **Input**: two tables, the first with polyline as spatial part of keys and the second with point.
+> **Input**: two tables, the first with polyline as spatial part of keys and the second with a point.
 >
-> **Output**: new table with rows of the first table which are modified by addition column. Each element in this column consists of the rows from the second table such that the point from the key in the row from the second table are located on distance not more than *R* from the polyline from the key in the row from the first table.
+> **Output**: new table with rows of the first table which are modified by addition column. Each element in this column consists of the rows from the second table such that the point from the key in the row from the second table are located at distance not more than *R* from the polyline from the key in the row from the first table.
 
 4. Insert many rows in a table as one query.
-5. Delete, update, select rows from table by user-specified predicate.
+5. Delete, update, select rows from the table by a user-specified predicate.
 
-For more information please read [texv2.pdf](https://github.com/sargarass/spatial-database-coursework/blob/master/texv2.pdf) (in russian)
+For more information please read [texv2.pdf](https://github.com/sargarass/spatial-database-coursework/blob/master/texv2.pdf) (in Russian)
 
 # Libraries that were used:
 1. cmake 3.0
@@ -67,7 +67,7 @@ StackAllocator::getInstance().resize(1024ULL * 1024ULL * 1024ULL);
 
 # Tests
 ## "TELE-3" (Point inside polygon)
-Let "Tele3" be telecommunications company that wanted to know which subscribers were in offices at the specified interval of time. We supposed that "Tele3" has table "Абоненты ТЕЛЕ-3". Each key in this table consists of GPS position (point) and the time when subscriber was in that position. Each value consists of list with first name ("Имя") and second name ("Фамилия") of subscriber. And supposed that "Tele3" also has table "Офисы ТЕЛЕ-3". Each key in this table consists of office boundary (polygon) and when this office was added to the database.
+Let "Tele3" be telecommunications company that wanted to know which subscribers were in offices at the specified interval of time. We supposed that "Tele3" has a table "Абоненты ТЕЛЕ-3". Each key in this table consists of GPS position (point) and the time when subscriber was in that position. Each value consists of a list with the first name ("Имя") and the second name ("Фамилия") of a subscriber. And supposed that "Tele3" also has table "Офисы ТЕЛЕ-3". Each key in this table consists of an office boundary (polygon) and when this office was added to the database.
 
 Code that create these databases:
 ```
@@ -355,8 +355,8 @@ TempTable "Строения" [{
 ```
 
 ### Visualisation of problem 
-1. Road is blue colored polyline 
+1. Road is a blue colored polyline 
 2. All areas that are close to the road are inside green areas.
-3. Red points are buildings that are in this areas.
-4. Purple are buildings that are in this areas and have type "Кафе".
+3. Red points are buildings that are in these areas.
+4. Purple are buildings that are in these areas and have type "Кафе".
 ![](images/cafe_img.png) 
